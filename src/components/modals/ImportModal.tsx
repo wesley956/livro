@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback } from 'react';
 import { useApp } from '../../stores/AppContext';
-import { validateFile } from '../../utils/fileUtils';
+import { validateFile, validateFileMagic } from '../../utils/fileUtils';
 
 interface ImportModalProps {
   onClose: () => void;
@@ -19,6 +19,11 @@ export function ImportModal({ onClose }: ImportModalProps) {
     const validation = validateFile(file);
     if (!validation.valid) {
       setError(validation.error ?? 'Arquivo inválido');
+      return;
+    }
+    const magicValidation = await validateFileMagic(file);
+    if (!magicValidation.valid) {
+      setError(magicValidation.error ?? 'Arquivo inválido ou corrompido.');
       return;
     }
     setError(null);
@@ -86,7 +91,7 @@ export function ImportModal({ onClose }: ImportModalProps) {
             <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: 22, color: 'var(--color-ivory)', marginBottom: 2 }}>
               Importar Livro
             </h2>
-            <div style={{ fontSize: 12, color: 'var(--color-ivory-faint)' }}>PDF ou EPUB · máx. 100MB</div>
+            <div style={{ fontSize: 12, color: 'var(--color-ivory-faint)' }}>PDF ou EPUB · máx. 100MB · salvo no aparelho</div>
           </div>
           <button
             onClick={onClose}
@@ -134,7 +139,7 @@ export function ImportModal({ onClose }: ImportModalProps) {
         <input
           ref={fileRef}
           type="file"
-          accept=".pdf,.epub"
+          accept=".pdf,.epub,application/pdf,application/epub+zip"
           style={{ display: 'none' }}
           onChange={handleChange}
           aria-hidden="true"

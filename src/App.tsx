@@ -45,16 +45,7 @@ function routeFromPath(pathname: string): { route: Route; bookId?: string } {
 
 function LoadingScreen() {
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: 'var(--color-carbon)',
-        color: 'var(--color-ivory)',
-      }}
-    >
+    <div className="loading-screen">
       <div style={{ textAlign: 'center' }}>
         <div style={{ fontSize: 46, marginBottom: 14, animation: 'float 3s ease infinite' }}>
           書
@@ -125,30 +116,13 @@ function AppContent() {
           <ReaderView />
         </ErrorBoundary>
       ) : (
-        <div
-          style={{
-            minHeight: '100vh',
-            height: '100vh',
-            display: 'flex',
-            background: 'var(--color-carbon)',
-            color: 'var(--color-ivory)',
-            overflow: 'hidden',
-          }}
-        >
+        <div className="app-shell">
           <Sidebar />
 
-          <div
-            style={{
-              flex: 1,
-              minWidth: 0,
-              height: '100%',
-              display: 'flex',
-              flexDirection: 'column',
-            }}
-          >
+          <div className="app-content">
             <TopBar title={ROUTE_TITLES[route]} />
 
-            <main role="main" style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
+            <main role="main" className="app-main">
               <ErrorBoundary>{renderSection()}</ErrorBoundary>
             </main>
           </div>

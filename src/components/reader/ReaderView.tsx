@@ -1,15 +1,20 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import type { CSSProperties, TouchEvent } from 'react';
 import { useApp } from '../../stores/AppContext';
 import { ErrorBoundary } from '../ui/ErrorBoundary';
 import type { ThemeName } from '../../types';
 import type { PDFDoc } from '../../utils/pdfLoader';
 import type { EpubBook, EpubChapter } from '../../utils/epubLoader';
 
-const THEME_STYLES: Record<ThemeName, { bg: string; text: string; panel: string }> = {
-  jade: { bg: '#0d1a14', text: '#f0e8d8', panel: '#141a16' },
-  paper: { bg: '#f5f0e8', text: '#1a1a1a', panel: '#ede5d5' },
-  'dark-paper': { bg: '#2a2520', text: '#d4c9b0', panel: '#221f1a' },
-  night: { bg: '#000000', text: '#ffffff', panel: '#0a0a0a' },
+type ReaderTheme = { bg: string; text: string; panel: string; card: string; border: string };
+type PanelTab = 'chapters' | 'bookmarks' | 'notes';
+type EpubRendition = { display: (target?: string) => Promise<unknown> | void; destroy?: () => void };
+
+const THEME_STYLES: Record<ThemeName, ReaderTheme> = {
+  jade: { bg: '#0d1a14', text: '#f0e8d8', panel: '#141a16', card: '#101712', border: 'rgba(200,169,110,0.18)' },
+  paper: { bg: '#f5f0e8', text: '#1a1a1a', panel: '#ede5d5', card: '#fff8ec', border: 'rgba(139,105,20,0.24)' },
+  'dark-paper': { bg: '#2a2520', text: '#d4c9b0', panel: '#221f1a', card: '#302920', border: 'rgba(200,169,110,0.18)' },
+  night: { bg: '#000000', text: '#ffffff', panel: '#0a0a0a', card: '#050505', border: 'rgba(255,255,255,0.12)' },
 };
 
 const FONT_FAMILIES: Record<string, string> = {
@@ -18,10 +23,39 @@ const FONT_FAMILIES: Record<string, string> = {
   noto: "'Noto Serif SC', serif",
 };
 
+const THEMES: ThemeName[] = ['jade', 'paper', 'dark-paper', 'night'];
+
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== 'undefined' ? window.matchMedia('(max-width: 767px)').matches : false,
+  );
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const media = window.matchMedia('(max-width: 767px)');
+    const update = () => setIsMobile(media.matches);
+    update();
+    media.addEventListener('change', update);
+    return () => media.removeEventListener('change', update);
+  }, []);
+
+  return isMobile;
+}
+
 export function ReaderView() {
-  const { navigate, setProgress, addBookmark, deleteBookmark, addSession, addNote, state } = useApp();
+  const {
+    navigate,
+    setProgress,
+    addBookmark,
+    deleteBookmark,
+    addSession,
+    addNote,
+    updatePrefs,
+    state,
+  } = useApp();
   const { currentBookId, books, bookmarks, prefs, notes } = state;
   const book = books.find(b => b.id === currentBookId);
+  const isMobile = useIsMobile();
 
   const [pdf, setPdf] = useState<PDFDoc | null>(null);
   const [epub, setEpub] = useState<EpubBook | null>(null);
@@ -31,79 +65,128 @@ export function ReaderView() {
   const [page, setPageState] = useState(book?.currentPage ?? 1);
   const [totalPages, setTotalPages] = useState(book?.totalPages ?? 1);
   const [rendering, setRendering] = useState(false);
-  const [panelTab, setPanelTab] = useState<'chapters' | 'bookmarks' | 'notes'>('chapters');
-  const [panelOpen, setPanelOpen] = useState(true);
+  const [panelTab, setPanelTab] = useState<PanelTab>('chapters');
+  const [panelOpen, setPanelOpen] = useState(false);
   const [noteText, setNoteText] = useState('');
   const [showNoteForm, setShowNoteForm] = useState(false);
+  const [readerWidth, setReaderWidth] = useState(900);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const epubRef = useRef<HTMLDivElement>(null);
+  const readerAreaRef = useRef<HTMLDivElement>(null);
+  const renditionRef = useRef<EpubRendition | null>(null);
   const sessionStartRef = useRef<{ page: number; time: number }>({ page: book?.currentPage ?? 1, time: Date.now() });
+  const touchStartX = useRef(0);
 
   const themeStyle = THEME_STYLES[prefs.theme] ?? THEME_STYLES.jade;
   const bookBookmarks = bookmarks.filter(b => b.bookId === currentBookId);
   const bookNotes = notes.filter(n => n.bookId === currentBookId);
 
-  // Load file
+  useEffect(() => {
+    setPanelOpen(!isMobile);
+  }, [isMobile]);
+
+  useEffect(() => {
+    const updateWidth = () => {
+      const width = readerAreaRef.current?.clientWidth ?? window.innerWidth;
+      setReaderWidth(width);
+    };
+    updateWidth();
+    window.addEventListener('resize', updateWidth);
+    const observer = typeof ResizeObserver !== 'undefined' && readerAreaRef.current
+      ? new ResizeObserver(updateWidth)
+      : null;
+    if (observer && readerAreaRef.current) observer.observe(readerAreaRef.current);
+    return () => {
+      window.removeEventListener('resize', updateWidth);
+      observer?.disconnect();
+    };
+  }, []);
+
   useEffect(() => {
     if (!book) return;
     setLoading(true);
     setLoadError(null);
+    setPdf(null);
+    setEpub(null);
+    setEpubChapters([]);
     setPageState(book.currentPage || 1);
+    sessionStartRef.current = { page: book.currentPage || 1, time: Date.now() };
 
     async function load() {
       try {
         const { dbGetFile } = await import('../../utils/db');
         const buffer = await dbGetFile(book!.id);
-        if (!buffer) throw new Error('Arquivo não encontrado. Reimporte o livro.');
+        if (!buffer) throw new Error('Arquivo não encontrado no aparelho. Importe o livro novamente uma vez.');
 
         if (book!.format === 'PDF') {
           const { loadPDF } = await import('../../utils/pdfLoader');
-          const pdfDoc = await loadPDF(buffer.slice(0));
+          const pdfDoc = await loadPDF(buffer);
           setPdf(pdfDoc);
           setTotalPages(pdfDoc.numPages);
-          setLoading(false);
         } else {
           const { loadEpub, getEpubChapters } = await import('../../utils/epubLoader');
           const epubDoc = await loadEpub(buffer.slice(0));
           const chapters = await getEpubChapters(epubDoc);
           setEpub(epubDoc);
           setEpubChapters(chapters);
-          setTotalPages(chapters.length || 1);
-          setLoading(false);
+          setTotalPages(Math.max(chapters.length, 1));
         }
+        setLoading(false);
       } catch (e) {
-        setLoadError(e instanceof Error ? e.message : 'Erro ao carregar o arquivo.');
+        const message = e instanceof Error ? e.message : 'Erro ao carregar o arquivo.';
+        setLoadError(`${message} Se esse PDF foi importado antes desta correção, remova e importe novamente.`);
         setLoading(false);
       }
     }
 
     void load();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [book?.id]);
+  }, [book?.id, book?.currentPage, book?.format]);
 
-  // Render PDF page
   useEffect(() => {
     if (!pdf || !canvasRef.current || loading) return;
+    let cancelled = false;
     setRendering(true);
-    import('../../utils/pdfLoader').then(({ renderPage }) => {
-      renderPage(pdf, page, canvasRef.current!, 1.5).then(() => setRendering(false));
-    });
-  }, [pdf, page, loading]);
+    const maxWidth = Math.max(260, Math.min(readerWidth - (isMobile ? 24 : 56), isMobile ? 720 : 920));
 
-  // Render EPUB
+    import('../../utils/pdfLoader')
+      .then(({ renderPage }) => renderPage(pdf, page, canvasRef.current!, { maxWidth }))
+      .catch(() => {
+        if (!cancelled) setLoadError('Não consegui renderizar esta página do PDF. Tente reimportar o arquivo.');
+      })
+      .finally(() => {
+        if (!cancelled) setRendering(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [pdf, page, loading, readerWidth, isMobile]);
+
   useEffect(() => {
     if (!epub || !epubRef.current || loading) return;
-      try {
-        epub.renderTo(epubRef.current, { width: '100%', height: '100%' });
-        const href = epubChapters[page - 1]?.href;
-        if (href) (epub as unknown as { display: (h: string) => void }).display(href);
-      } catch { /* ignore */ }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [epub, page, loading]);
+    epubRef.current.innerHTML = '';
+    try {
+      const rendition = epub.renderTo(epubRef.current, { width: '100%', height: '100%' }) as unknown as EpubRendition;
+      renditionRef.current = rendition;
+      const href = epubChapters[page - 1]?.href;
+      void rendition.display(href);
+    } catch {
+      setLoadError('Não consegui abrir este EPUB. Tente importar o arquivo novamente.');
+    }
+
+    return () => {
+      renditionRef.current?.destroy?.();
+      renditionRef.current = null;
+    };
+  }, [epub, epubChapters, loading]);
+
+  useEffect(() => {
+    if (!renditionRef.current || !epubChapters.length) return;
+    const href = epubChapters[page - 1]?.href;
+    void renditionRef.current.display(href);
+  }, [page, epubChapters]);
 
   const goToPage = useCallback((newPage: number) => {
-    if (!book) return;
+    if (!book || Number.isNaN(newPage)) return;
     const clamped = Math.max(1, Math.min(newPage, totalPages));
     setPageState(clamped);
     setProgress(book.id, clamped);
@@ -112,49 +195,50 @@ export function ReaderView() {
   const prevPage = useCallback(() => goToPage(page - 1), [goToPage, page]);
   const nextPage = useCallback(() => goToPage(page + 1), [goToPage, page]);
 
-  // Keyboard navigation
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') nextPage();
-      else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') prevPage();
-      else if (e.key === 'Escape') goBack();
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nextPage, prevPage]);
-
-  // Touch swipe
-  const touchStartX = useRef<number>(0);
-  const handleTouchStart = (e: React.TouchEvent) => { touchStartX.current = e.touches[0]?.clientX ?? 0; };
-  const handleTouchEnd = (e: React.TouchEvent) => {
-    const diff = (e.changedTouches[0]?.clientX ?? 0) - touchStartX.current;
-    if (Math.abs(diff) > 50) { if (diff > 0) prevPage(); else nextPage(); }
-  };
-
   const goBack = useCallback(() => {
-    // Save session
     if (book && sessionStartRef.current) {
       const { page: startPage, time } = sessionStartRef.current;
       addSession({
         bookId: book.id,
         startPage,
         endPage: page,
-        durationMs: Date.now() - time,
+        durationMs: Math.max(1000, Date.now() - time),
         date: new Date().toISOString(),
       });
     }
     navigate('library');
   }, [book, page, addSession, navigate]);
 
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') nextPage();
+      else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') prevPage();
+      else if (e.key === 'Escape') {
+        if (isMobile && panelOpen) setPanelOpen(false);
+        else goBack();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [nextPage, prevPage, goBack, isMobile, panelOpen]);
+
+  const handleTouchStart = (e: TouchEvent<HTMLDivElement>) => {
+    touchStartX.current = e.touches[0]?.clientX ?? 0;
+  };
+
+  const handleTouchEnd = (e: TouchEvent<HTMLDivElement>) => {
+    const diff = (e.changedTouches[0]?.clientX ?? 0) - touchStartX.current;
+    if (Math.abs(diff) > 60) {
+      if (diff > 0) prevPage();
+      else nextPage();
+    }
+  };
+
   const handleAddBookmark = useCallback(() => {
     if (!book) return;
     const existing = bookBookmarks.find(b => b.page === page);
-    if (existing) {
-      deleteBookmark(existing.id);
-    } else {
-      addBookmark({ bookId: book.id, page, text: `Página ${page}` });
-    }
+    if (existing) deleteBookmark(existing.id);
+    else addBookmark({ bookId: book.id, page, text: `Página ${page}` });
   }, [book, page, bookBookmarks, addBookmark, deleteBookmark]);
 
   const handleAddNote = useCallback(() => {
@@ -164,17 +248,99 @@ export function ReaderView() {
     setShowNoteForm(false);
   }, [book, page, noteText, addNote]);
 
+  const increaseFont = () => updatePrefs({ fontSize: Math.min(30, prefs.fontSize + 1) });
+  const decreaseFont = () => updatePrefs({ fontSize: Math.max(12, prefs.fontSize - 1) });
+  const cycleTheme = () => {
+    const currentIndex = THEMES.indexOf(prefs.theme);
+    updatePrefs({ theme: THEMES[(currentIndex + 1) % THEMES.length] ?? 'jade' });
+  };
+
   const progress = totalPages > 0 ? Math.round((page / totalPages) * 100) : 0;
   const isBookmarked = bookBookmarks.some(b => b.page === page);
 
+  const renderPanel = () => (
+    <aside className={isMobile ? 'reader-mobile-panel' : 'reader-side-panel'} style={{ background: themeStyle.panel, borderColor: themeStyle.border }}>
+      <div className="reader-panel-tabs">
+        {(['chapters', 'bookmarks', 'notes'] as const).map(tab => (
+          <button
+            key={tab}
+            onClick={() => setPanelTab(tab)}
+            aria-selected={panelTab === tab}
+            className={panelTab === tab ? 'reader-panel-tab active' : 'reader-panel-tab'}
+          >
+            {tab === 'chapters' ? '☰ Caps.' : tab === 'bookmarks' ? '🔖 Marcad.' : '✎ Notas'}
+          </button>
+        ))}
+        {isMobile && (
+          <button className="reader-panel-close" onClick={() => setPanelOpen(false)} aria-label="Fechar painel">×</button>
+        )}
+      </div>
+
+      <div className="reader-panel-content">
+        {panelTab === 'chapters' && (
+          <div>
+            {book?.format === 'EPUB' && epubChapters.length > 0 ? (
+              epubChapters.map((ch, i) => (
+                <button key={ch.id} onClick={() => { goToPage(i + 1); if (isMobile) setPanelOpen(false); }} className={page === i + 1 ? 'reader-list-button active' : 'reader-list-button'}>
+                  {ch.label}
+                </button>
+              ))
+            ) : (
+              <div className="reader-empty-small">{book?.format === 'PDF' ? `PDF · ${totalPages} páginas` : 'Sem capítulos'}</div>
+            )}
+          </div>
+        )}
+
+        {panelTab === 'bookmarks' && (
+          <div>
+            <button onClick={handleAddBookmark} className="reader-action-button">
+              {isBookmarked ? '🔖 Remover marcador' : '+ Adicionar marcador'}
+            </button>
+            {bookBookmarks.length === 0 && <div className="reader-empty-small">Nenhum marcador</div>}
+            {bookBookmarks.slice().sort((a, b) => a.page - b.page).map(bm => (
+              <div key={bm.id} className="reader-bookmark-row">
+                <button onClick={() => { goToPage(bm.page); if (isMobile) setPanelOpen(false); }}>
+                  p. {bm.page}
+                </button>
+                <button onClick={() => deleteBookmark(bm.id)} aria-label="Remover marcador">×</button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {panelTab === 'notes' && (
+          <div>
+            <button onClick={() => setShowNoteForm(v => !v)} className="reader-action-button">
+              + Nova nota (p. {page})
+            </button>
+            {showNoteForm && (
+              <div className="reader-note-form">
+                <textarea value={noteText} onChange={e => setNoteText(e.target.value)} placeholder="Sua anotação..." autoFocus />
+                <div>
+                  <button onClick={handleAddNote}>Salvar</button>
+                  <button onClick={() => setShowNoteForm(false)}>Cancelar</button>
+                </div>
+              </div>
+            )}
+            {bookNotes.length === 0 && !showNoteForm && <div className="reader-empty-small">Sem anotações</div>}
+            {bookNotes.slice().sort((a, b) => a.pageNumber - b.pageNumber).map(n => (
+              <div key={n.id} className="reader-note-card">
+                <div>p. {n.pageNumber}</div>
+                {n.text.slice(0, 120)}{n.text.length > 120 ? '…' : ''}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </aside>
+  );
+
   if (!book) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', background: '#0d1a14', color: '#f0e8d8', flexDirection: 'column', gap: 12 }}>
+      <div className="reader-empty-state">
         <div style={{ fontSize: 48 }}>📭</div>
         <div>Nenhum livro selecionado</div>
-        <button onClick={() => navigate('library')} style={{ padding: '8px 18px', borderRadius: 8, background: 'rgba(200,169,110,0.15)', border: '1px solid rgba(200,169,110,0.25)', color: '#c8a96e', cursor: 'pointer', fontSize: 13 }}>
-          Ir para a Biblioteca
-        </button>
+        <button onClick={() => navigate('library')}>Ir para a Biblioteca</button>
       </div>
     );
   }
@@ -182,309 +348,116 @@ export function ReaderView() {
   return (
     <ErrorBoundary label="Erro no leitor">
       <div
-        className="reader-enter"
-        style={{
-          display: 'flex', flexDirection: 'column', height: '100%',
-          background: themeStyle.bg, color: themeStyle.text, overflow: 'hidden',
-        }}
+        className="reader-enter reader-shell"
+        style={{ background: themeStyle.bg, color: themeStyle.text }}
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
       >
-        {/* Top Bar */}
-        <div style={{
-          height: 52, background: `${themeStyle.panel}cc`, backdropFilter: 'blur(8px)',
-          borderBottom: '1px solid rgba(200,169,110,0.1)',
-          display: 'flex', alignItems: 'center', gap: 12, padding: '0 16px', flexShrink: 0,
-        }}>
-          <button onClick={goBack} aria-label="Voltar à biblioteca" style={topBtnStyle}>
-            ← Biblioteca
+        <header className="reader-topbar" style={{ background: `${themeStyle.panel}ee`, borderColor: themeStyle.border }}>
+          <button onClick={goBack} aria-label="Voltar à biblioteca" className="reader-top-button">
+            ← <span>Biblioteca</span>
           </button>
-          <div style={{ flex: 1, textAlign: 'center', overflow: 'hidden' }}>
-            <div style={{ fontFamily: 'var(--font-serif)', fontSize: 15, fontWeight: 500, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
-              {book.title}
-            </div>
-            <div style={{ fontSize: 10, opacity: 0.5, marginTop: 1 }}>{book.author}</div>
+
+          <div className="reader-title-block">
+            <div>{book.title}</div>
+            <span>{book.author}</span>
           </div>
-          <div style={{ display: 'flex', gap: 6 }}>
-            {/* Font size */}
-            <button onClick={() => { if (prefs.fontSize > 12) { const { updatePrefs } = useApp as unknown as { updatePrefs: (p: object) => void }; void updatePrefs; } }} aria-label="Diminuir fonte" style={topBtnStyle}>A-</button>
-            <button aria-label="Tamanho da fonte atual" style={{ ...topBtnStyle, minWidth: 28, cursor: 'default', fontSize: 10 }}>{prefs.fontSize}</button>
-            <button onClick={() => { if (prefs.fontSize < 28) { const { updatePrefs } = useApp as unknown as { updatePrefs: (p: object) => void }; void updatePrefs; } }} aria-label="Aumentar fonte" style={topBtnStyle}>A+</button>
-            {/* Panel toggle */}
-            <button onClick={() => setPanelOpen(v => !v)} aria-label="Painel lateral" style={topBtnStyle}>
-              {panelOpen ? '⊞' : '☰'}
+
+          <div className="reader-top-actions">
+            <button onClick={decreaseFont} aria-label="Diminuir fonte" className="reader-top-button">A-</button>
+            <button aria-label="Tamanho da fonte atual" className="reader-font-chip">{prefs.fontSize}</button>
+            <button onClick={increaseFont} aria-label="Aumentar fonte" className="reader-top-button">A+</button>
+            <button onClick={cycleTheme} aria-label="Trocar tema" className="reader-top-button">Tema</button>
+            <button onClick={() => setPanelOpen(v => !v)} aria-label="Painel lateral" className="reader-top-button">
+              {panelOpen ? '×' : '☰'}
             </button>
           </div>
-        </div>
+        </header>
 
-        {/* Main area */}
-        <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-          {/* Reading area */}
-          <div style={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '24px 16px' }}>
+        <div className="reader-main">
+          <section ref={readerAreaRef} className="reader-area">
+            <div className="reader-ornament reader-ornament-left" />
+            <div className="reader-ornament reader-ornament-right" />
+
             {loading && (
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16, marginTop: 80 }}>
+              <div className="reader-loading">
                 <div className="spinner" style={{ width: 36, height: 36 }} />
-                <div style={{ fontSize: 14, opacity: 0.6 }}>Carregando...</div>
+                <div>Carregando livro...</div>
               </div>
             )}
+
             {loadError && (
-              <div style={{ textAlign: 'center', padding: 32, maxWidth: 400 }}>
+              <div className="reader-error-card">
                 <div style={{ fontSize: 48, marginBottom: 12 }}>⚠️</div>
-                <div style={{ fontFamily: 'var(--font-serif)', fontSize: 18, marginBottom: 8 }}>Erro ao carregar</div>
-                <div style={{ fontSize: 13, opacity: 0.6, marginBottom: 20 }}>{loadError}</div>
-                <button onClick={() => navigate('library')} style={{ padding: '8px 18px', borderRadius: 8, background: 'rgba(200,169,110,0.15)', border: '1px solid rgba(200,169,110,0.25)', color: '#c8a96e', cursor: 'pointer', fontSize: 13 }}>
-                  Reimportar
-                </button>
+                <div style={{ fontFamily: 'var(--font-serif)', fontSize: 22, marginBottom: 8 }}>Erro ao carregar o livro</div>
+                <p>{loadError}</p>
+                <button onClick={() => navigate('library')}>Voltar para biblioteca</button>
               </div>
             )}
 
-            {/* PDF Canvas */}
             {!loading && !loadError && book.format === 'PDF' && (
-              <div style={{ position: 'relative' }}>
-                {rendering && (
-                  <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.3)', borderRadius: 4, zIndex: 10 }}>
-                    <div className="spinner" />
-                  </div>
-                )}
-                <canvas ref={canvasRef} className="pdf-canvas" style={{ maxWidth: '100%' }} />
+              <div className="reader-page-frame" style={{ background: themeStyle.card, borderColor: themeStyle.border }}>
+                {rendering && <div className="reader-rendering"><div className="spinner" /></div>}
+                <canvas ref={canvasRef} className="pdf-canvas reader-pdf-canvas" />
               </div>
             )}
 
-            {/* EPUB */}
             {!loading && !loadError && book.format === 'EPUB' && (
-              <div
-                ref={epubRef}
-                style={{
-                  width: '100%', maxWidth: 720, minHeight: 600,
-                  background: themeStyle.bg,
-                  fontFamily: FONT_FAMILIES[prefs.fontFamily] ?? FONT_FAMILIES['garamond'],
-                  fontSize: prefs.fontSize,
-                  lineHeight: prefs.lineHeight,
-                  color: themeStyle.text,
-                  borderRadius: 8,
-                }}
-              />
+              <div className="reader-page-frame reader-epub-frame" style={{ background: themeStyle.card, borderColor: themeStyle.border }}>
+                <div
+                  ref={epubRef}
+                  style={{
+                    width: '100%',
+                    minHeight: isMobile ? '66dvh' : 640,
+                    fontFamily: FONT_FAMILIES[prefs.fontFamily] ?? FONT_FAMILIES['garamond'],
+                    fontSize: prefs.fontSize,
+                    lineHeight: prefs.lineHeight,
+                    color: themeStyle.text,
+                  }}
+                />
+              </div>
             )}
-          </div>
+          </section>
 
-          {/* Side panel */}
-          {panelOpen && (
-            <div style={{
-              width: 280, background: themeStyle.panel,
-              borderLeft: '1px solid rgba(200,169,110,0.1)',
-              display: 'flex', flexDirection: 'column',
-              flexShrink: 0, overflow: 'hidden',
-            }}>
-              {/* Tabs */}
-              <div style={{ display: 'flex', borderBottom: '1px solid rgba(200,169,110,0.1)' }}>
-                {(['chapters', 'bookmarks', 'notes'] as const).map(tab => (
-                  <button
-                    key={tab}
-                    onClick={() => setPanelTab(tab)}
-                    aria-selected={panelTab === tab}
-                    style={{
-                      flex: 1, padding: '10px 4px', border: 'none', background: 'none',
-                      fontSize: 11, cursor: 'pointer', textAlign: 'center',
-                      color: panelTab === tab ? 'var(--color-gold)' : 'rgba(240,232,216,0.4)',
-                      borderBottom: panelTab === tab ? '2px solid var(--color-gold)' : '2px solid transparent',
-                      transition: 'all 0.2s',
-                    }}
-                  >
-                    {tab === 'chapters' ? '☰ Caps.' : tab === 'bookmarks' ? '🔖 Marcad.' : '✎ Notas'}
-                  </button>
-                ))}
-              </div>
-
-              {/* Panel content */}
-              <div style={{ flex: 1, overflowY: 'auto', padding: 12 }}>
-                {panelTab === 'chapters' && (
-                  <div>
-                    {book.format === 'EPUB' && epubChapters.length > 0 ? (
-                      epubChapters.map((ch, i) => (
-                        <button
-                          key={ch.id}
-                          onClick={() => goToPage(i + 1)}
-                          style={{
-                            display: 'block', width: '100%', textAlign: 'left',
-                            padding: '8px 10px', marginBottom: 2, borderRadius: 6,
-                            background: page === i + 1 ? 'rgba(200,169,110,0.12)' : 'none',
-                            border: 'none', cursor: 'pointer', fontSize: 12,
-                            color: page === i + 1 ? 'var(--color-gold)' : 'rgba(240,232,216,0.6)',
-                            transition: 'all 0.15s',
-                          }}
-                          onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'rgba(200,169,110,0.08)'}
-                          onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = page === i + 1 ? 'rgba(200,169,110,0.12)' : 'none'}
-                        >
-                          {ch.label}
-                        </button>
-                      ))
-                    ) : (
-                      <div style={{ fontSize: 12, color: 'rgba(240,232,216,0.4)', padding: '12px 0' }}>
-                        {book.format === 'PDF' ? `PDF · ${totalPages} páginas` : 'Sem capítulos'}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {panelTab === 'bookmarks' && (
-                  <div>
-                    <button
-                      onClick={handleAddBookmark}
-                      style={{
-                        width: '100%', padding: '8px', marginBottom: 12, borderRadius: 8,
-                        background: isBookmarked ? 'rgba(200,169,110,0.2)' : 'rgba(200,169,110,0.08)',
-                        border: '1px solid rgba(200,169,110,0.2)', cursor: 'pointer',
-                        color: 'var(--color-gold)', fontSize: 12,
-                      }}
-                    >
-                      {isBookmarked ? '🔖 Remover marcador' : '+ Adicionar marcador'}
-                    </button>
-                    {bookBookmarks.length === 0 && (
-                      <div style={{ fontSize: 12, color: 'rgba(240,232,216,0.4)', textAlign: 'center', padding: 12 }}>
-                        Nenhum marcador
-                      </div>
-                    )}
-                    {bookBookmarks.sort((a, b) => a.page - b.page).map(bm => (
-                      <div
-                        key={bm.id}
-                        style={{
-                          display: 'flex', alignItems: 'center', gap: 8,
-                          padding: '6px 8px', borderRadius: 6, marginBottom: 4,
-                          background: bm.page === page ? 'rgba(200,169,110,0.12)' : 'none',
-                        }}
-                      >
-                        <button
-                          onClick={() => goToPage(bm.page)}
-                          style={{ flex: 1, background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer', fontSize: 12, color: 'rgba(240,232,216,0.7)' }}
-                        >
-                          🔖 p. {bm.page}
-                        </button>
-                        <button
-                          onClick={() => deleteBookmark(bm.id)}
-                          aria-label="Remover marcador"
-                          style={{ background: 'none', border: 'none', color: '#e74c3c', cursor: 'pointer', fontSize: 13 }}
-                        >
-                          ×
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {panelTab === 'notes' && (
-                  <div>
-                    <button
-                      onClick={() => setShowNoteForm(v => !v)}
-                      style={{
-                        width: '100%', padding: '8px', marginBottom: 12, borderRadius: 8,
-                        background: 'rgba(200,169,110,0.08)', border: '1px solid rgba(200,169,110,0.2)',
-                        cursor: 'pointer', color: 'var(--color-gold)', fontSize: 12,
-                      }}
-                    >
-                      + Nova nota (p. {page})
-                    </button>
-                    {showNoteForm && (
-                      <div style={{ marginBottom: 12 }}>
-                        <textarea
-                          value={noteText}
-                          onChange={e => setNoteText(e.target.value)}
-                          placeholder="Sua anotação..."
-                          autoFocus
-                          style={{
-                            width: '100%', minHeight: 80, resize: 'vertical',
-                            background: 'rgba(200,169,110,0.04)',
-                            border: '1px solid rgba(200,169,110,0.2)',
-                            borderRadius: 6, padding: '6px 8px',
-                            color: 'rgba(240,232,216,0.9)', fontSize: 12,
-                            outline: 'none',
-                          }}
-                        />
-                        <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-                          <button onClick={handleAddNote} style={{ flex: 2, padding: '6px 0', borderRadius: 6, background: 'rgba(46,204,138,0.15)', border: '1px solid rgba(46,204,138,0.3)', color: '#2ecc8a', cursor: 'pointer', fontSize: 11 }}>
-                            Salvar
-                          </button>
-                          <button onClick={() => setShowNoteForm(false)} style={{ flex: 1, padding: '6px 0', borderRadius: 6, background: 'none', border: '1px solid rgba(200,169,110,0.15)', color: 'rgba(240,232,216,0.4)', cursor: 'pointer', fontSize: 11 }}>
-                            ×
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                    {bookNotes.length === 0 && !showNoteForm && (
-                      <div style={{ fontSize: 12, color: 'rgba(240,232,216,0.4)', textAlign: 'center', padding: 12 }}>Sem anotações</div>
-                    )}
-                    {bookNotes.sort((a, b) => a.pageNumber - b.pageNumber).map(n => (
-                      <div key={n.id} style={{
-                        padding: '8px 10px', borderRadius: 6, marginBottom: 6,
-                        background: 'rgba(200,169,110,0.06)', border: '1px solid rgba(200,169,110,0.1)',
-                        fontSize: 12, color: 'rgba(240,232,216,0.7)',
-                      }}>
-                        <div style={{ color: 'var(--color-gold)', fontSize: 10, marginBottom: 4 }}>p. {n.pageNumber}</div>
-                        {n.text.slice(0, 80)}{n.text.length > 80 ? '…' : ''}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
+          {!isMobile && panelOpen && renderPanel()}
+          {isMobile && panelOpen && (
+            <>
+              <button className="reader-panel-backdrop" aria-label="Fechar painel" onClick={() => setPanelOpen(false)} />
+              {renderPanel()}
+            </>
           )}
         </div>
 
-        {/* Bottom bar */}
-        <div style={{
-          height: 56, background: `${themeStyle.panel}cc`, backdropFilter: 'blur(8px)',
-          borderTop: '1px solid rgba(200,169,110,0.1)',
-          display: 'flex', alignItems: 'center', gap: 12, padding: '0 16px', flexShrink: 0,
-        }}>
-          <button onClick={prevPage} disabled={page <= 1} aria-label="Página anterior" style={{ ...topBtnStyle, opacity: page <= 1 ? 0.3 : 1 }}>
-            ←
-          </button>
-
-          {/* Progress */}
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <div style={{ height: 3, background: 'rgba(200,169,110,0.15)', borderRadius: 2, overflow: 'hidden' }}>
-              <div style={{
-                height: '100%', borderRadius: 2,
-                background: 'linear-gradient(90deg, var(--color-jade-bright), var(--color-gold))',
-                width: `${progress}%`, transition: 'width 0.3s ease',
-              }} />
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, opacity: 0.5 }}>
-              <span>Página {page} / {totalPages}</span>
-              <span>{progress}%</span>
-            </div>
+        <footer className="reader-bottombar" style={{ background: `${themeStyle.panel}f2`, borderColor: themeStyle.border }}>
+          <button onClick={prevPage} disabled={page <= 1} aria-label="Página anterior" className="reader-bottom-button">←</button>
+          <div className="reader-progress-wrap">
+            <div className="reader-progress-track"><div style={{ width: `${progress}%` }} /></div>
+            <div className="reader-progress-labels"><span>Página {page} / {totalPages}</span><span>{progress}%</span></div>
           </div>
-
-          {/* Page input */}
           <input
             type="number"
             value={page}
-            min={1} max={totalPages}
+            min={1}
+            max={totalPages}
             onChange={e => goToPage(Number(e.target.value))}
             aria-label="Ir para página"
-            style={{
-              width: 54, textAlign: 'center',
-              background: 'rgba(200,169,110,0.08)',
-              border: '1px solid rgba(200,169,110,0.2)',
-              borderRadius: 6, padding: '4px 6px',
-              color: 'rgba(240,232,216,0.8)', fontSize: 12, outline: 'none',
-            }}
+            className="reader-page-input"
           />
-
-          <button onClick={nextPage} disabled={page >= totalPages} aria-label="Próxima página" style={{ ...topBtnStyle, opacity: page >= totalPages ? 0.3 : 1 }}>
-            →
-          </button>
-        </div>
+          <button onClick={nextPage} disabled={page >= totalPages} aria-label="Próxima página" className="reader-bottom-button">→</button>
+        </footer>
       </div>
     </ErrorBoundary>
   );
 }
 
-const topBtnStyle: React.CSSProperties = {
+export const topBtnStyle: CSSProperties = {
   background: 'rgba(200,169,110,0.08)',
   border: '1px solid rgba(200,169,110,0.15)',
-  borderRadius: 6, padding: '5px 10px',
+  borderRadius: 6,
+  padding: '5px 10px',
   color: 'rgba(240,232,216,0.7)',
-  cursor: 'pointer', fontSize: 12,
+  cursor: 'pointer',
+  fontSize: 12,
   transition: 'all 0.2s',
   flexShrink: 0,
 };
