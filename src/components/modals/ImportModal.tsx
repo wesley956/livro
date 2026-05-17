@@ -1,6 +1,7 @@
-import { useState, useRef, useCallback } from 'react';
+import { useCallback, useRef, useState } from 'react';
+import type { ChangeEvent, DragEvent } from 'react';
 import { useApp } from '../../stores/AppContext';
-import { validateFile, validateFileMagic } from '../../utils/fileUtils';
+import { formatFileSize, validateFile, validateFileMagic } from '../../utils/fileUtils';
 
 interface ImportModalProps {
   onClose: () => void;
@@ -12,127 +13,295 @@ export function ImportModal({ onClose }: ImportModalProps) {
   const [importing, setImporting] = useState(false);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
   const [preview, setPreview] = useState<{ name: string; size: string } | null>(null);
-  const fileRef = useRef<HTMLInputElement>(null);
+  const fileRef = useRef<HTMLInputElement | null>(null);
 
-  const handleFile = useCallback(async (file: File) => {
-    const validation = validateFile(file);
-    if (!validation.valid) {
-      setError(validation.error ?? 'Arquivo inválido');
-      return;
-    }
-    const magicValidation = await validateFileMagic(file);
-    if (!magicValidation.valid) {
-      setError(magicValidation.error ?? 'Arquivo inválido ou corrompido.');
-      return;
-    }
-    setError(null);
-    const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
-    setPreview({ name: file.name, size: `${sizeMB} MB` });
-    setImporting(true);
-    setProgress(10);
+  const handleFile = useCallback(
+    async (file: File) => {
+      const validation = validateFile(file);
 
-    const interval = setInterval(() => {
-      setProgress(p => Math.min(p + 15, 85));
-    }, 300);
+      if (!validation.valid) {
+        setError(validation.error ?? 'Arquivo inválido.');
+        setWarning(null);
+        return;
+      }
 
-    try {
-      await importBook(file);
-      setProgress(100);
-      setTimeout(() => { onClose(); }, 600);
-    } catch (e) {
-      setError('Erro ao importar o arquivo. Tente novamente.');
-      setImporting(false);
-    } finally {
-      clearInterval(interval);
-    }
-  }, [importBook, onClose]);
+      const magicValidation = await validateFileMagic(file);
 
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-    const file = e.dataTransfer.files[0];
-    if (file) void handleFile(file);
-  }, [handleFile]);
+      if (!magicValidation.valid) {
+        setError(magicValidation.error ?? 'Arquivo inválido ou corrompido.');
+        setWarning(null);
+        return;
+      }
 
-  const handleChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) void handleFile(file);
-  }, [handleFile]);
+      setError(null);
+      setWarning(magicValidation.warning ?? null);
+      setPreview({ name: file.name, size: formatFileSize(file.size) });
+      setImporting(true);
+      setProgress(8);
+
+      const interval = window.setInterval(() => {
+        setProgress(value => Math.min(value + 12, 88));
+      }, 220);
+
+      try {
+        await importBook(file);
+        setProgress(100);
+
+        window.setTimeout(() => {
+          onClose();
+        }, 500);
+      } catch (unknownError) {
+        const message =
+          unknownError instanceof Error
+            ? unknownError.message
+            : 'Erro ao importar o arquivo. Tente novamente.';
+
+        setError(message);
+        setImporting(false);
+      } finally {
+        window.clearInterval(interval);
+      }
+    },
+    [importBook, onClose],
+  );
+
+  const handleDrop = useCallback(
+    (event: DragEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      setIsDragging(false);
+
+      const file = event.dataTransfer.files[0];
+
+      if (file) void handleFile(file);
+    },
+    [handleFile],
+  );
+
+  const handleChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+
+      if (file) void handleFile(file);
+    },
+    [handleFile],
+  );
 
   return (
     <div
-      className="modal-overlay"
       onClick={onClose}
       style={{
-        position: 'fixed', inset: 0, zIndex: 1000,
-        background: 'rgba(0,0,0,0.7)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        padding: 20, backdropFilter: 'blur(4px)',
+        position: 'fixed',
+        inset: 0,
+        zIndex: 80,
+        background: 'rgba(0,0,0,0.68)',
+        backdropFilter: 'blur(12px)',
+        display: 'grid',
+        placeItems: 'center',
+        padding: 16,
       }}
     >
       <div
-        className="modal-content"
-        onClick={e => e.stopPropagation()}
+        onClick={event => event.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-label="Importar livro"
         style={{
           background: 'var(--color-panel)',
-          border: '1px solid rgba(200,169,110,0.2)',
+          border: '1px solid rgba(200,169,110,0.24)',
           borderRadius: 'var(--radius-modal)',
-          padding: '32px',
-          maxWidth: 480, width: '100%',
+          padding: 28,
+          maxWidth: 520,
+          width: '100%',
+          color: 'var(--color-ivory)',
+          boxShadow: '0 28px 100px rgba(0,0,0,0.48)',
         }}
       >
-        {/* Header */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            justifyContent: 'space-between',
+            gap: 16,
+            marginBottom: 20,
+          }}
+        >
           <div>
-            <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: 22, color: 'var(--color-ivory)', marginBottom: 2 }}>
+            <h2
+              style={{
+                margin: 0,
+                fontFamily: 'var(--font-serif)',
+                fontSize: 30,
+                color: 'var(--color-gold)',
+              }}
+            >
               Importar Livro
             </h2>
-            <div style={{ fontSize: 12, color: 'var(--color-ivory-faint)' }}>PDF ou EPUB · máx. 100MB · salvo no aparelho</div>
+
+            <p style={{ margin: '6px 0 0', color: 'var(--color-ivory-dim)', fontSize: 14 }}>
+              PDF ou EPUB · até 200MB · salvo no aparelho
+            </p>
           </div>
+
           <button
+            type="button"
             onClick={onClose}
             aria-label="Fechar"
-            style={{ background: 'none', border: 'none', color: 'var(--color-ivory-faint)', cursor: 'pointer', fontSize: 22, lineHeight: 1 }}
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 14,
+              border: '1px solid rgba(200,169,110,0.22)',
+              background: 'rgba(255,255,255,0.04)',
+              color: 'var(--color-ivory)',
+              cursor: 'pointer',
+              fontSize: 22,
+            }}
           >
             ×
           </button>
         </div>
 
-        {/* Drop zone */}
         {!importing && (
           <div
             onClick={() => fileRef.current?.click()}
-            onDragOver={e => { e.preventDefault(); setIsDragging(true); }}
+            onDragOver={event => {
+              event.preventDefault();
+              setIsDragging(true);
+            }}
             onDragLeave={() => setIsDragging(false)}
             onDrop={handleDrop}
             role="button"
             tabIndex={0}
             aria-label="Área de arrastar e soltar arquivo"
-            onKeyDown={e => e.key === 'Enter' && fileRef.current?.click()}
+            onKeyDown={event => {
+              if (event.key === 'Enter') fileRef.current?.click();
+            }}
             style={{
-              border: `2px dashed ${isDragging ? 'var(--color-gold)' : 'rgba(200,169,110,0.25)'}`,
-              borderRadius: 16,
-              padding: '48px 24px',
+              border: `2px dashed ${
+                isDragging ? 'var(--color-gold)' : 'rgba(200,169,110,0.28)'
+              }`,
+              borderRadius: 20,
+              padding: '46px 22px',
               textAlign: 'center',
               cursor: 'pointer',
-              transition: 'all 0.2s',
-              background: isDragging ? 'rgba(200,169,110,0.06)' : 'transparent',
+              transition: 'all 0.2s ease',
+              background: isDragging ? 'rgba(200,169,110,0.08)' : 'rgba(255,255,255,0.025)',
             }}
           >
-            <div style={{ fontSize: 48, marginBottom: 12 }}>📂</div>
-            <div style={{ fontFamily: 'var(--font-serif)', fontSize: 16, color: 'var(--color-ivory)', marginBottom: 6 }}>
+            <div style={{ fontSize: 44, marginBottom: 12 }}>📚</div>
+            <div style={{ fontFamily: 'var(--font-serif)', fontSize: 24, marginBottom: 6 }}>
               Arraste seu arquivo aqui
             </div>
-            <div style={{ fontSize: 12, color: 'var(--color-ivory-faint)', marginBottom: 16 }}>
-              ou clique para selecionar
+            <div style={{ color: 'var(--color-ivory-dim)', fontSize: 14 }}>
+              ou clique para selecionar PDF / EPUB
             </div>
-            <div style={{ fontSize: 11, color: 'var(--color-gold)', opacity: 0.7 }}>
-              .PDF · .EPUB
+          </div>
+        )}
+
+        {importing && (
+          <div
+            style={{
+              border: '1px solid rgba(200,169,110,0.2)',
+              borderRadius: 20,
+              padding: 22,
+              background: 'rgba(255,255,255,0.035)',
+            }}
+          >
+            <div style={{ fontWeight: 700, marginBottom: 6 }}>{preview?.name}</div>
+            <div style={{ color: 'var(--color-ivory-dim)', fontSize: 13, marginBottom: 16 }}>
+              {preview?.size} · {progress < 100 ? 'Processando...' : 'Concluído! ✓'}
             </div>
+
+            <div
+              style={{
+                height: 10,
+                borderRadius: 999,
+                overflow: 'hidden',
+                background: 'rgba(200,169,110,0.16)',
+              }}
+            >
+              <div
+                style={{
+                  width: `${progress}%`,
+                  height: '100%',
+                  background: 'linear-gradient(90deg, var(--color-jade-bright), var(--color-gold))',
+                  transition: 'width 0.25s ease',
+                }}
+              />
+            </div>
+          </div>
+        )}
+
+        {warning && (
+          <div
+            style={{
+              marginTop: 14,
+              border: '1px solid rgba(200,169,110,0.28)',
+              borderRadius: 14,
+              padding: 12,
+              background: 'rgba(200,169,110,0.08)',
+              color: 'var(--color-gold)',
+              fontSize: 13,
+              lineHeight: 1.5,
+            }}
+          >
+            ⚠ {warning}
+          </div>
+        )}
+
+        {error && (
+          <div
+            style={{
+              marginTop: 14,
+              border: '1px solid rgba(255,90,90,0.28)',
+              borderRadius: 14,
+              padding: 12,
+              background: 'rgba(139,26,26,0.22)',
+              color: '#ffb4b4',
+              fontSize: 13,
+              lineHeight: 1.5,
+            }}
+          >
+            ⚠ {error}
+          </div>
+        )}
+
+        {!importing && (
+          <div style={{ display: 'flex', gap: 12, marginTop: 20 }}>
+            <button
+              type="button"
+              onClick={onClose}
+              style={{
+                flex: 1,
+                padding: '12px 0',
+                borderRadius: 14,
+                background: 'transparent',
+                border: '1px solid rgba(200,169,110,0.22)',
+                color: 'var(--color-ivory-dim)',
+                cursor: 'pointer',
+              }}
+            >
+              Cancelar
+            </button>
+
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              style={{
+                flex: 2,
+                padding: '12px 0',
+                borderRadius: 14,
+                background: 'linear-gradient(135deg, var(--color-jade), #0a3326)',
+                border: '1px solid rgba(200,169,110,0.32)',
+                color: 'var(--color-ivory)',
+                cursor: 'pointer',
+                fontWeight: 700,
+              }}
+            >
+              Selecionar arquivo
+            </button>
           </div>
         )}
 
@@ -140,69 +309,9 @@ export function ImportModal({ onClose }: ImportModalProps) {
           ref={fileRef}
           type="file"
           accept=".pdf,.epub,application/pdf,application/epub+zip"
-          style={{ display: 'none' }}
           onChange={handleChange}
-          aria-hidden="true"
+          style={{ display: 'none' }}
         />
-
-        {/* Progress */}
-        {importing && (
-          <div style={{ textAlign: 'center', padding: '24px 0' }}>
-            <div style={{ fontSize: 12, color: 'var(--color-ivory-faint)', marginBottom: 8 }}>
-              {preview?.name}
-            </div>
-            <div style={{ height: 4, background: 'rgba(200,169,110,0.1)', borderRadius: 2, overflow: 'hidden', marginBottom: 8 }}>
-              <div style={{
-                height: '100%', borderRadius: 2,
-                background: 'linear-gradient(90deg, var(--color-jade-bright), var(--color-gold))',
-                width: `${progress}%`,
-                transition: 'width 0.3s ease',
-              }} />
-            </div>
-            <div style={{ fontSize: 13, color: 'var(--color-gold)' }}>
-              {progress < 100 ? 'Processando...' : 'Concluído! ✓'}
-            </div>
-          </div>
-        )}
-
-        {/* Error */}
-        {error && (
-          <div style={{
-            marginTop: 12, padding: '10px 14px', borderRadius: 8,
-            background: 'rgba(231,76,60,0.1)', border: '1px solid rgba(231,76,60,0.2)',
-            color: '#e74c3c', fontSize: 13,
-          }}>
-            ⚠ {error}
-          </div>
-        )}
-
-        {/* Actions */}
-        {!importing && (
-          <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
-            <button
-              onClick={onClose}
-              style={{
-                flex: 1, padding: '10px 0', borderRadius: 10,
-                background: 'rgba(200,169,110,0.06)',
-                border: '1px solid rgba(200,169,110,0.15)',
-                color: 'var(--color-ivory-faint)', cursor: 'pointer', fontSize: 13,
-              }}
-            >
-              Cancelar
-            </button>
-            <button
-              onClick={() => fileRef.current?.click()}
-              style={{
-                flex: 2, padding: '10px 0', borderRadius: 10,
-                background: 'linear-gradient(135deg, var(--color-jade) 0%, #0a3326 100%)',
-                border: '1px solid rgba(200,169,110,0.25)',
-                color: 'var(--color-ivory)', cursor: 'pointer', fontSize: 13, fontWeight: 500,
-              }}
-            >
-              Selecionar arquivo
-            </button>
-          </div>
-        )}
       </div>
     </div>
   );

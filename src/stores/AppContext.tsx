@@ -261,14 +261,39 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [state.books, navigate]);
 
   const importBook = useCallback(async (file: File) => {
-    const { getFileFormat, generateId: genId, formatFileSize } = await import('../utils/fileUtils');
+    const {
+      getFileFormat,
+      generateId: genId,
+      validateFileMagic,
+    } = await import('../utils/fileUtils');
     const { generateCoverSVG, svgToDataURL } = await import('../utils/coverUtils');
 
     const format = getFileFormat(file);
-    if (!format) { addToast('error', 'Formato não suportado'); return; }
+
+    if (!format) {
+      addToast('error', 'Formato não suportado. Use PDF ou EPUB.');
+      throw new Error('Formato não suportado. Use PDF ou EPUB.');
+    }
+
+    const validation = await validateFileMagic(file);
+
+    if (!validation.valid) {
+      addToast('error', validation.error ?? 'Arquivo inválido.');
+      throw new Error(validation.error ?? 'Arquivo inválido.');
+    }
+
+    if (validation.warning) {
+      addToast('warning', validation.warning);
+    }
 
     const arrayBuffer = await file.arrayBuffer();
-    let title = file.name.replace(/\.(pdf|epub)$/i, '');
+
+    if (arrayBuffer.byteLength === 0) {
+      addToast('error', 'Arquivo vazio.');
+      throw new Error('Arquivo vazio.');
+    }
+
+    let title = file.name.replace(/\.(pdf|epub)$/i, '').trim() || 'Livro sem título';
     let author = 'Autor desconhecido';
     let totalPages = 1;
     let cover: string | null = null;
@@ -276,22 +301,58 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     try {
       if (format === 'PDF') {
         const { loadPDF, extractMetadata, renderFirstPageAsBase64 } = await import('../utils/pdfLoader');
-        const pdf = await loadPDF(arrayBuffer.slice(0));
-        const meta = await extractMetadata(pdf);
-        if (meta.title) title = meta.title;
-        if (meta.author) author = meta.author;
-        totalPages = meta.numPages;
-        cover = await renderFirstPageAsBase64(pdf);
+
+        try {
+          const pdf = await loadPDF(arrayBuffer.slice(0));
+          const meta = await extractMetadata(pdf);
+
+          if (meta.title) title = meta.title;
+          if (meta.author) author = meta.author;
+          if (meta.numPages > 0) totalPages = meta.numPages;
+
+          try {
+            cover = await renderFirstPageAsBase64(pdf);
+          } catch {
+            cover = null;
+          }
+        } catch (pdfError) {
+          const message = pdfError instanceof Error ? pdfError.message : '';
+
+          if (/senha|password/i.test(message)) {
+            addToast('warning', 'PDF protegido por senha. Ele foi importado, mas pedirá senha ao abrir.');
+          } else {
+            addToast(
+              'warning',
+              'Não consegui extrair metadados deste PDF. Ele será importado e tentará abrir em modo compatibilidade.',
+            );
+          }
+        }
       } else {
-        const { loadEpub, getEpubMetadata, getEpubCover } = await import('../utils/epubLoader');
-        const epub = await loadEpub(arrayBuffer.slice(0));
-        const meta = await getEpubMetadata(epub);
-        if (meta.title) title = meta.title;
-        if (meta.author) author = meta.author;
-        cover = await getEpubCover(epub);
+        const { loadEpub, getEpubMetadata, getEpubCover, getEpubChapters } = await import('../utils/epubLoader');
+
+        try {
+          const epub = await loadEpub(arrayBuffer.slice(0));
+          const meta = await getEpubMetadata(epub);
+          const chapters = await getEpubChapters(epub).catch(() => []);
+
+          if (meta.title) title = meta.title;
+          if (meta.author) author = meta.author;
+          if (chapters.length > 0) totalPages = chapters.length;
+
+          try {
+            cover = await getEpubCover(epub);
+          } catch {
+            cover = null;
+          }
+        } catch {
+          addToast(
+            'warning',
+            'Não consegui extrair metadados deste EPUB. Ele será importado com capa automática.',
+          );
+        }
       }
     } catch {
-      // fallback
+      addToast('warning', 'Metadados indisponíveis. O livro será importado com dados básicos.');
     }
 
     if (!cover) {
@@ -299,6 +360,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
 
     const id = genId();
+    const now = new Date().toISOString();
+
     const book: Book = {
       id,
       title,
@@ -307,21 +370,26 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       format,
       status: 'new',
       progress: 0,
-      totalPages,
+      totalPages: Math.max(1, totalPages),
       currentPage: 1,
       lastRead: null,
       favorite: false,
-      mood: '📖',
+      mood: '',
       fileSize: file.size,
-      importedAt: new Date().toISOString(),
+      importedAt: now,
       notes: [],
     };
 
-    await dbSetFile(id, arrayBuffer);
+    await dbSetFile(id, file, {
+      mime: file.type || (format === 'PDF' ? 'application/pdf' : 'application/epub+zip'),
+      name: file.name,
+      size: file.size,
+    });
+
     await dbSetBook(book);
+
     dispatch({ type: 'ADD_BOOK', book });
     addToast('success', `"${title}" adicionado à biblioteca!`);
-    void formatFileSize; // used indirectly
   }, [addToast]);
 
   const addNote = useCallback((data: Omit<Note, 'id' | 'createdAt' | 'updatedAt'>) => {

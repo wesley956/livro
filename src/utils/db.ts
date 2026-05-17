@@ -1,68 +1,124 @@
-import { get, set, del, keys, createStore } from 'idb-keyval';
-import type { Book, Note, ReadingSession, Bookmark, ReaderPreferences } from '../types';
+import { get, set, del } from 'idb-keyval';
+import type { Book, Bookmark, Note, ReaderPreferences, ReadingSession } from '../types';
 
-const bookStore = createStore('lume-books', 'books');
-const fileStore = createStore('lume-files', 'files');
-const noteStore = createStore('lume-notes', 'notes');
-const sessionStore = createStore('lume-sessions', 'sessions');
-const bookmarkStore = createStore('lume-bookmarks', 'bookmarks');
-const prefStore = createStore('lume-prefs', 'prefs');
+const BOOKS_KEY = 'lume-books-v2';
+const NOTES_KEY = 'lume-notes-v2';
+const SESSIONS_KEY = 'lume-sessions-v2';
+const BOOKMARKS_KEY = 'lume-bookmarks-v2';
+const PREFS_KEY = 'lume-prefs-v2';
+const FILE_PREFIX = 'lume-file-v2:';
 
-function normalizeBuffer(value: unknown): ArrayBuffer | undefined {
-  if (value instanceof ArrayBuffer) return value.slice(0);
-  if (ArrayBuffer.isView(value)) {
-    const view = value as ArrayBufferView;
-    return view.buffer.slice(view.byteOffset, view.byteOffset + view.byteLength) as ArrayBuffer;
+type StoredFile =
+  | ArrayBuffer
+  | Blob
+  | {
+      buffer?: ArrayBuffer;
+      blob?: Blob;
+      mime?: string;
+      name?: string;
+      size?: number;
+      savedAt?: string;
+    };
+
+function toStrictArrayBuffer(input: ArrayBuffer | Uint8Array): ArrayBuffer {
+  if (input instanceof Uint8Array) {
+    const copy = new Uint8Array(input.byteLength);
+    copy.set(input);
+    return copy.buffer as ArrayBuffer;
   }
+
+  return input.slice(0);
+}
+
+async function getArray<T>(key: string): Promise<T[]> {
+  const value = await get<T[]>(key);
+  return Array.isArray(value) ? value : [];
+}
+
+async function setArray<T extends { id: string }>(key: string, item: T): Promise<void> {
+  const items = await getArray<T>(key);
+  const next = items.some(existing => existing.id === item.id)
+    ? items.map(existing => (existing.id === item.id ? item : existing))
+    : [...items, item];
+
+  await set(key, next);
+}
+
+async function deleteFromArray<T extends { id: string }>(key: string, id: string): Promise<void> {
+  const items = await getArray<T>(key);
+  await set(
+    key,
+    items.filter(item => item.id !== id),
+  );
+}
+
+export const dbGetBooks = () => getArray<Book>(BOOKS_KEY);
+export const dbSetBook = (book: Book) => setArray<Book>(BOOKS_KEY, book);
+export const dbDeleteBook = (id: string) => deleteFromArray<Book>(BOOKS_KEY, id);
+
+export const dbGetNotes = () => getArray<Note>(NOTES_KEY);
+export const dbSetNote = (note: Note) => setArray<Note>(NOTES_KEY, note);
+export const dbDeleteNote = (id: string) => deleteFromArray<Note>(NOTES_KEY, id);
+
+export const dbGetSessions = () => getArray<ReadingSession>(SESSIONS_KEY);
+export const dbSetSession = (session: ReadingSession) => setArray<ReadingSession>(SESSIONS_KEY, session);
+
+export const dbGetBookmarks = () => getArray<Bookmark>(BOOKMARKS_KEY);
+export const dbSetBookmark = (bookmark: Bookmark) => setArray<Bookmark>(BOOKMARKS_KEY, bookmark);
+export const dbDeleteBookmark = (id: string) => deleteFromArray<Bookmark>(BOOKMARKS_KEY, id);
+
+export const dbGetPrefs = () => get<ReaderPreferences>(PREFS_KEY);
+export const dbSetPrefs = (prefs: ReaderPreferences) => set(PREFS_KEY, prefs);
+
+export async function dbSetFile(
+  bookId: string,
+  file: ArrayBuffer | Uint8Array | Blob,
+  meta?: { mime?: string; name?: string; size?: number },
+): Promise<void> {
+  let blob: Blob;
+
+  if (file instanceof Blob) {
+    blob = file;
+  } else {
+    const buffer = toStrictArrayBuffer(file);
+    blob = new Blob([buffer], { type: meta?.mime || 'application/octet-stream' });
+  }
+
+  const stored: StoredFile = {
+    blob,
+    mime: meta?.mime || blob.type || 'application/octet-stream',
+    name: meta?.name,
+    size: meta?.size || blob.size,
+    savedAt: new Date().toISOString(),
+  };
+
+  await set(`${FILE_PREFIX}${bookId}`, stored);
+}
+
+export async function dbGetFile(bookId: string): Promise<ArrayBuffer | undefined> {
+  const stored = await get<StoredFile>(`${FILE_PREFIX}${bookId}`);
+
+  if (!stored) return undefined;
+
+  if (stored instanceof Blob) {
+    const buffer = await stored.arrayBuffer();
+    return buffer.byteLength > 0 ? buffer : undefined;
+  }
+
+  if (stored instanceof ArrayBuffer) {
+    return stored.byteLength > 0 ? stored.slice(0) : undefined;
+  }
+
+  if (stored.blob instanceof Blob) {
+    const buffer = await stored.blob.arrayBuffer();
+    return buffer.byteLength > 0 ? buffer : undefined;
+  }
+
+  if (stored.buffer instanceof ArrayBuffer) {
+    return stored.buffer.byteLength > 0 ? stored.buffer.slice(0) : undefined;
+  }
+
   return undefined;
 }
 
-// Books
-export async function dbGetBooks(): Promise<Book[]> {
-  const ks = await keys(bookStore);
-  const results = await Promise.all(ks.map(k => get<Book>(k, bookStore)));
-  return results.filter((b): b is Book => b !== undefined);
-}
-export async function dbSetBook(book: Book): Promise<void> { await set(book.id, book, bookStore); }
-export async function dbDeleteBook(id: string): Promise<void> { await del(id, bookStore); }
-
-// Files
-export async function dbSetFile(bookId: string, buffer: ArrayBuffer): Promise<void> {
-  await set(bookId, buffer.slice(0), fileStore);
-}
-export async function dbGetFile(bookId: string): Promise<ArrayBuffer | undefined> {
-  const value = await get<unknown>(bookId, fileStore);
-  if (value instanceof Blob) return value.arrayBuffer();
-  return normalizeBuffer(value);
-}
-export async function dbDeleteFile(bookId: string): Promise<void> { await del(bookId, fileStore); }
-
-// Notes
-export async function dbGetNotes(): Promise<Note[]> {
-  const ks = await keys(noteStore);
-  const results = await Promise.all(ks.map(k => get<Note>(k, noteStore)));
-  return results.filter((n): n is Note => n !== undefined);
-}
-export async function dbSetNote(note: Note): Promise<void> { await set(note.id, note, noteStore); }
-export async function dbDeleteNote(id: string): Promise<void> { await del(id, noteStore); }
-
-// Sessions
-export async function dbGetSessions(): Promise<ReadingSession[]> {
-  const ks = await keys(sessionStore);
-  const results = await Promise.all(ks.map(k => get<ReadingSession>(k, sessionStore)));
-  return results.filter((s): s is ReadingSession => s !== undefined);
-}
-export async function dbSetSession(session: ReadingSession): Promise<void> { await set(session.id, session, sessionStore); }
-
-// Bookmarks
-export async function dbGetBookmarks(): Promise<Bookmark[]> {
-  const ks = await keys(bookmarkStore);
-  const results = await Promise.all(ks.map(k => get<Bookmark>(k, bookmarkStore)));
-  return results.filter((b): b is Bookmark => b !== undefined);
-}
-export async function dbSetBookmark(bookmark: Bookmark): Promise<void> { await set(bookmark.id, bookmark, bookmarkStore); }
-export async function dbDeleteBookmark(id: string): Promise<void> { await del(id, bookmarkStore); }
-
-// Preferences
-export async function dbGetPrefs(): Promise<ReaderPreferences | undefined> { return get<ReaderPreferences>('prefs', prefStore); }
-export async function dbSetPrefs(prefs: ReaderPreferences): Promise<void> { await set('prefs', prefs, prefStore); }
+export const dbDeleteFile = (bookId: string) => del(`${FILE_PREFIX}${bookId}`);
