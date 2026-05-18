@@ -1,375 +1,525 @@
-// src/components/PdfReader.tsx
-// Leitor de PDF com:
-//  - Renderização via canvas (página por página, scroll contínuo)
-//  - Text layer REAL: permite selecionar, copiar e marcar texto
-//  - Zoom ajustável
-//  - Progresso salvo automaticamente
-//  - Suporte a highlights persistidos
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import * as pdfjs from "pdfjs-dist/legacy/build/pdf.mjs";
 
-import {
-  useEffect,
-  useRef,
-  useState,
-  useCallback,
-  forwardRef,
-  useImperativeHandle,
-} from "react";
-import * as pdfjs from "pdfjs-dist";
-import type { PDFDocumentProxy, PDFPageProxy, RenderTask } from "pdfjs-dist";
-import { useReaderProgress } from "../hooks/useReaderProgress";
-import type { Annotation, HighlightColor } from "../hooks/useAnnotations";
-
-// ── Worker do PDF.js ──────────────────────────────────────────────────────────
-// O Vite vai copiar o worker para o dist automaticamente via ?url
-// IMPORTANTE: se der erro, troque pela linha do CDN comentada abaixo.
 pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.mjs";
-// Alternativa CDN (use se o ?url não funcionar com viteSingleFile):
-// pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
-
-// ── Tipos ─────────────────────────────────────────────────────────────────────
-interface PdfReaderProps {
-  fileUrl: string;       // URL do arquivo (blob: ou http:)
-  bookId: string;
-  scale?: number;        // Zoom inicial (padrão: auto-fit)
-  theme?: "light" | "dark" | "sepia";
-  annotations?: Annotation[];
-  onTextSelected?: (text: string, x: number, y: number) => void;
-  onPageChange?: (page: number, total: number) => void;
-  onHighlight?: (color: HighlightColor, text: string, page: number, rects: DOMRect[]) => void;
-}
 
 export interface PdfReaderHandle {
-  goToPage: (page: number) => void;
+  previousPage: () => void;
+  nextPage: () => void;
+  goToPage: (pageNumber: number) => void;
   zoomIn: () => void;
   zoomOut: () => void;
   zoomFit: () => void;
-  currentPage: number;
-  totalPages: number;
 }
 
-// ── Constantes ────────────────────────────────────────────────────────────────
-const SCALE_MIN = 0.5;
-const SCALE_MAX = 3.0;
-const SCALE_STEP = 0.25;
-const SAVE_DEBOUNCE_MS = 1500;
+interface PdfReaderProps {
+  fileUrl: string;
+  bookId: string;
+  scale?: number;
+  theme?: "light" | "dark" | string;
+  annotations?: unknown[];
+  onTextSelected?: (text: string, x: number, y: number) => void;
+  onPageChange?: (pageNumber: number, progress: number) => void;
+  onHighlight?: (text: string, pageNumber: number) => void;
+}
 
-// ── Componente ────────────────────────────────────────────────────────────────
-export const PdfReader = forwardRef<PdfReaderHandle, PdfReaderProps>(
-  function PdfReader(
-    { fileUrl, bookId, scale: initialScale, theme = "light", annotations: _annotations = [], onTextSelected, onPageChange, onHighlight: _onHighlight },
-    ref
-  ) {
-    const containerRef = useRef<HTMLDivElement>(null);
-    const pdfRef = useRef<PDFDocumentProxy | null>(null);
-    const renderTasksRef = useRef<Map<number, RenderTask>>(new Map());
-    const observerRef = useRef<IntersectionObserver | null>(null);
-    const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+type ViewMode = "reflow" | "page";
 
-    const [totalPages, setTotalPages] = useState(0);
-    const [currentPage, setCurrentPage] = useState(1);
-    const [scale, setScale] = useState(initialScale ?? 0); // 0 = auto-fit
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
+type TextItemLike = {
+  str?: string;
+  transform?: number[];
+  hasEOL?: boolean;
+};
 
-    const { saveProgress, loadProgress } = useReaderProgress(bookId);
+type TextLine = {
+  y: number;
+  x: number;
+  text: string;
+};
 
-    // ── Expõe API para o pai ────────────────────────────────────────────────
-    useImperativeHandle(ref, () => ({
-      goToPage: (page: number) => scrollToPage(page),
-      zoomIn: () => setScale((s) => Math.min(s + SCALE_STEP, SCALE_MAX)),
-      zoomOut: () => setScale((s) => Math.max(s - SCALE_STEP, SCALE_MIN)),
-      zoomFit: () => setScale(0),
-      get currentPage() { return currentPage; },
-      get totalPages() { return totalPages; },
-    }));
+function useMobileDefault() {
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== "undefined"
+      ? window.matchMedia("(max-width: 767px)").matches
+      : false,
+  );
 
-    // ── Calcula scale automático baseado na largura do container ───────────
-    const getAutoScale = useCallback(
-      (pageWidth: number): number => {
-        const containerWidth = containerRef.current?.clientWidth ?? window.innerWidth;
-        const padding = 48;
-        return (containerWidth - padding) / pageWidth;
-      },
-      []
-    );
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 767px)");
+    const update = () => setIsMobile(media.matches);
 
-    // ── Renderiza uma página no seu canvas + cria text layer ───────────────
-    const renderPage = useCallback(
-      async (pageNum: number, pdf: PDFDocumentProxy, effectiveScale: number) => {
-        const wrapper = document.getElementById(`pdf-page-${pageNum}`);
-        if (!wrapper) return;
+    update();
+    media.addEventListener("change", update);
 
-        const canvas = wrapper.querySelector("canvas") as HTMLCanvasElement;
-        const textLayerDiv = wrapper.querySelector(".textLayer") as HTMLDivElement;
-        if (!canvas || !textLayerDiv) return;
+    return () => media.removeEventListener("change", update);
+  }, []);
 
-        // Cancela render anterior desta página se houver
-        const prevTask = renderTasksRef.current.get(pageNum);
-        prevTask?.cancel();
+  return isMobile;
+}
 
-        const page: PDFPageProxy = await pdf.getPage(pageNum);
-        const s = effectiveScale > 0 ? effectiveScale : getAutoScale(page.getViewport({ scale: 1 }).width);
-        const viewport = page.getViewport({ scale: s });
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
+}
 
-        // Configura o canvas para alta resolução (DPR)
-        const dpr = window.devicePixelRatio || 1;
-        canvas.width = viewport.width * dpr;
-        canvas.height = viewport.height * dpr;
-        canvas.style.width = `${viewport.width}px`;
-        canvas.style.height = `${viewport.height}px`;
+function normalizeExtractedText(items: TextItemLike[]): string {
+  const positioned: TextLine[] = [];
 
-        // Ajusta tamanho do wrapper
-        (wrapper as HTMLElement).style.width = `${viewport.width}px`;
-        (wrapper as HTMLElement).style.minHeight = `${viewport.height}px`;
+  for (const item of items) {
+    const raw = item.str?.trim();
 
-        const ctx = canvas.getContext("2d")!;
-        ctx.scale(dpr, dpr);
+    if (!raw) continue;
 
-        const renderTask = page.render({ canvasContext: ctx, viewport, canvas });
-        renderTasksRef.current.set(pageNum, renderTask);
+    const transform = item.transform ?? [];
+    const x = Number(transform[4] ?? 0);
+    const y = Number(transform[5] ?? 0);
 
-        try {
-          await renderTask.promise;
-        } catch (err: unknown) {
-          if ((err as Error)?.name === "RenderingCancelledException") return;
-          throw err;
+    positioned.push({ x, y, text: raw });
+  }
+
+  if (positioned.length === 0) return "";
+
+  positioned.sort((a, b) => {
+    const dy = Math.abs(b.y - a.y);
+
+    if (dy > 4) return b.y - a.y;
+
+    return a.x - b.x;
+  });
+
+  const lines: { y: number; parts: string[] }[] = [];
+
+  for (const item of positioned) {
+    const last = lines[lines.length - 1];
+
+    if (!last || Math.abs(last.y - item.y) > 5) {
+      lines.push({ y: item.y, parts: [item.text] });
+    } else {
+      last.parts.push(item.text);
+    }
+  }
+
+  const paragraphs: string[] = [];
+  let current = "";
+  let previousY: number | null = null;
+
+  for (const line of lines) {
+    const lineText = line.parts.join(" ").replace(/\s+/g, " ").trim();
+
+    if (!lineText) continue;
+
+    const verticalGap = previousY === null ? 0 : Math.abs(previousY - line.y);
+    const startsLikeNewParagraph = /^[A-ZÁÀÂÃÉÊÍÓÔÕÚÇ0-9“"—-]/.test(lineText);
+    const previousEndsSentence = /[.!?…:]$/.test(current.trim());
+
+    if (
+      current &&
+      (verticalGap > 16 || (previousEndsSentence && startsLikeNewParagraph))
+    ) {
+      paragraphs.push(current.trim());
+      current = lineText;
+    } else {
+      current = current ? `${current} ${lineText}` : lineText;
+    }
+
+    previousY = line.y;
+  }
+
+  if (current.trim()) paragraphs.push(current.trim());
+
+  return paragraphs.join("\n\n");
+}
+
+export const PdfReader = forwardRef<PdfReaderHandle, PdfReaderProps>(function PdfReader({
+  fileUrl,
+  bookId,
+  scale: initialScale = 1,
+  theme = "light",
+  onTextSelected,
+  onPageChange,
+}: PdfReaderProps, ref) {
+  const isMobile = useMobileDefault();
+  const [pdf, setPdf] = useState<pdfjs.PDFDocumentProxy | null>(null);
+  const [pageNumber, setPageNumber] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [viewMode, setViewMode] = useState<ViewMode>(() =>
+    typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches
+      ? "reflow"
+      : "page",
+  );
+  const [fontSize, setFontSize] = useState(isMobile ? 20 : 22);
+  const [lineHeight] = useState(1.72);
+  const [pageText, setPageText] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [rendering, setRendering] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [containerWidth, setContainerWidth] = useState(360);
+  const [zoom, setZoom] = useState(initialScale);
+
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const renderTokenRef = useRef(0);
+
+  const progress = useMemo(() => {
+    if (!totalPages) return 0;
+    return Math.round((pageNumber / totalPages) * 100);
+  }, [pageNumber, totalPages]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      try {
+        setLoading(true);
+        setError(null);
+
+        const task = pdfjs.getDocument({
+          url: fileUrl,
+          useWorkerFetch: false,
+          isEvalSupported: false,
+          stopAtErrors: false,
+          disableFontFace: false,
+          useSystemFonts: true,
+        });
+
+        const loadedPdf = await task.promise;
+
+        if (cancelled) return;
+
+        setPdf(loadedPdf);
+        setTotalPages(loadedPdf.numPages || 1);
+        setPageNumber(1);
+      } catch (unknownError) {
+        const message =
+          unknownError instanceof Error
+            ? unknownError.message
+            : "Não foi possível abrir este PDF.";
+
+        if (!cancelled) {
+          setError(message);
         }
-
-        // ── Text Layer ────────────────────────────────────────────────────
-        // Limpa text layer anterior
-        textLayerDiv.innerHTML = "";
-        textLayerDiv.style.width = `${viewport.width}px`;
-        textLayerDiv.style.height = `${viewport.height}px`;
-
-        try {
-          const textContent = await page.getTextContent();
-
-          // Text layer manual: cria spans selecionáveis
-            for (const item of textContent.items) {
-              if (!("str" in item) || !item.str) continue;
-
-              const textItem = item as {
-                str: string;
-                hasEOL?: boolean;
-                transform: number[];
-                width?: number;
-                height?: number;
-                ascent?: number;
-              };
-
-              const span = document.createElement("span");
-              span.textContent = textItem.str + (textItem.hasEOL ? "\n" : "");
-
-              const tx = pdfjs.Util.transform(viewport.transform, textItem.transform);
-              const angle = Math.atan2(tx[1], tx[0]);
-              const fontHeight = Math.max(1, Math.hypot(tx[2], tx[3]) || textItem.height || 10);
-              const fontAscent =
-                typeof textItem.ascent === "number"
-                  ? textItem.ascent * fontHeight
-                  : fontHeight;
-
-              const textLength = Math.max(1, span.textContent.length);
-              const scaleX =
-                textItem.width && fontHeight
-                  ? Math.max(0.4, Math.min(3, (textItem.width * s) / (fontHeight * textLength * 0.55)))
-                  : 1;
-
-              span.style.cssText = `
-                left: ${tx[4]}px;
-                top: ${tx[5] - fontAscent}px;
-                font-size: ${fontHeight}px;
-                transform: rotate(${angle}rad) scaleX(${scaleX});
-              `;
-              textLayerDiv.appendChild(span);
-            }
-        } catch (e) {
-          console.warn(`[Lume PDF] Text layer p.${pageNum}:`, e);
-        }
-      },
-      [getAutoScale]
-    );
-
-    // ── Scroll para uma página específica ──────────────────────────────────
-    const scrollToPage = useCallback((page: number) => {
-      const el = document.getElementById(`pdf-page-${page}`);
-      el?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }, []);
-
-    // ── Carrega o PDF ──────────────────────────────────────────────────────
-    useEffect(() => {
-      if (!fileUrl) return;
-
-      let cancelled = false;
-      setLoading(true);
-      setError(null);
-
-      const load = async () => {
-        try {
-          const loadingTask = pdfjs.getDocument({ url: fileUrl });
-          const pdf = await loadingTask.promise;
-          if (cancelled) return;
-
-          pdfRef.current = pdf;
-          setTotalPages(pdf.numPages);
-
-          // Recupera progresso salvo
-          const progress = await loadProgress();
-          const startPage = progress?.page ?? 1;
-
+      } finally {
+        if (!cancelled) {
           setLoading(false);
-
-          // Aguarda DOM renderizar os placeholders
-          setTimeout(async () => {
-            if (cancelled) return;
-            // Renderiza páginas visíveis inicialmente (ao redor da startPage)
-            const pagesToRender = new Set<number>();
-            for (let p = Math.max(1, startPage - 1); p <= Math.min(pdf.numPages, startPage + 2); p++) {
-              pagesToRender.add(p);
-            }
-            const effectiveScale = scale > 0 ? scale : 0;
-            for (const p of pagesToRender) {
-              await renderPage(p, pdf, effectiveScale);
-            }
-            // Vai para a página salva
-            if (startPage > 1) scrollToPage(startPage);
-          }, 100);
-        } catch (err) {
-          if (!cancelled) {
-            console.error("[Lume PDF] Erro ao carregar:", err);
-            setError("Não foi possível abrir este PDF. Verifique se o arquivo está correto.");
-            setLoading(false);
-          }
         }
-      };
-
-      load();
-      return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [fileUrl]);
-
-    // ── IntersectionObserver: renderiza páginas conforme o scroll ──────────
-    useEffect(() => {
-      if (!totalPages || !pdfRef.current) return;
-
-      const pdf = pdfRef.current;
-
-      observerRef.current?.disconnect();
-      observerRef.current = new IntersectionObserver(
-        (entries) => {
-          for (const entry of entries) {
-            if (!entry.isIntersecting) continue;
-            const pageNum = parseInt(
-              (entry.target as HTMLElement).dataset.page ?? "0"
-            );
-            if (!pageNum) continue;
-
-            // Atualiza página atual
-            setCurrentPage((prev) => {
-              if (prev !== pageNum) {
-                onPageChange?.(pageNum, totalPages);
-                return pageNum;
-              }
-              return prev;
-            });
-
-            // Renderiza esta página se ainda não renderizada
-            const canvas = entry.target.querySelector("canvas") as HTMLCanvasElement;
-            if (canvas && !canvas.dataset.rendered) {
-              canvas.dataset.rendered = "1";
-              renderPage(pageNum, pdf, scale);
-            }
-          }
-        },
-        {
-          root: containerRef.current,
-          rootMargin: "200px 0px",
-          threshold: 0.1,
-        }
-      );
-
-      // Observa todos os page wrappers
-      document.querySelectorAll("[data-page]").forEach((el) =>
-        observerRef.current?.observe(el)
-      );
-
-      return () => observerRef.current?.disconnect();
-    }, [totalPages, scale, renderPage, onPageChange]);
-
-    // ── Salva progresso com debounce ──────────────────────────────────────
-    useEffect(() => {
-      if (!currentPage) return;
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = setTimeout(() => {
-        saveProgress({ page: currentPage, scrollY: containerRef.current?.scrollTop });
-      }, SAVE_DEBOUNCE_MS);
-      return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); };
-    }, [currentPage, saveProgress]);
-
-    // ── Detecta seleção de texto ──────────────────────────────────────────
-    useEffect(() => {
-      const handleMouseUp = (e: MouseEvent) => {
-        const selection = window.getSelection();
-        const text = selection?.toString().trim();
-        if (text && text.length > 1 && onTextSelected) {
-          onTextSelected(text, e.clientX, e.clientY);
-        }
-      };
-      document.addEventListener("mouseup", handleMouseUp);
-      return () => document.removeEventListener("mouseup", handleMouseUp);
-    }, [onTextSelected]);
-
-    // ── Renderização ───────────────────────────────────────────────────────
-    if (error) {
-      return (
-        <div className="flex flex-col items-center justify-center h-full text-center p-8 text-zinc-400">
-          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="mb-4 text-zinc-600">
-            <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
-          </svg>
-          <p className="text-sm">{error}</p>
-        </div>
-      );
+      }
     }
 
-    if (loading) {
-      return (
-        <div className="flex flex-col items-center justify-center h-full gap-4 text-zinc-500">
-          <div className="w-8 h-8 border-2 border-zinc-700 border-t-amber-500 rounded-full animate-spin" />
-          <p className="text-sm">Abrindo livro…</p>
-        </div>
-      );
+    void load();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [fileUrl]);
+
+  useEffect(() => {
+    const update = () => {
+      const rect = containerRef.current?.getBoundingClientRect();
+      setContainerWidth(Math.max(260, Math.floor(rect?.width ?? window.innerWidth)));
+    };
+
+    update();
+
+    const observer =
+      typeof ResizeObserver !== "undefined" && containerRef.current
+        ? new ResizeObserver(update)
+        : null;
+
+    if (observer && containerRef.current) {
+      observer.observe(containerRef.current);
     }
 
+    window.addEventListener("resize", update);
+    window.addEventListener("orientationchange", update);
+
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", update);
+      window.removeEventListener("orientationchange", update);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!pdf) return;
+
+    onPageChange?.(pageNumber, progress);
+  }, [pdf, pageNumber, progress, onPageChange]);
+
+  useEffect(() => {
+    if (!pdf) return;
+
+    const activePdf = pdf;
+    let cancelled = false;
+
+    async function extract() {
+      try {
+        const page = await activePdf.getPage(pageNumber);
+        const content = await page.getTextContent();
+        const items = content.items as TextItemLike[];
+        const text = normalizeExtractedText(items);
+
+        if (!cancelled) {
+          setPageText(text);
+        }
+      } catch {
+        if (!cancelled) {
+          setPageText("");
+        }
+      }
+    }
+
+    void extract();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [pdf, pageNumber]);
+
+  useEffect(() => {
+    if (!pdf || !canvasRef.current || viewMode !== "page") return;
+
+    const activePdf = pdf;
+    let cancelled = false;
+    const token = renderTokenRef.current + 1;
+    renderTokenRef.current = token;
+
+    async function render() {
+      try {
+        setRendering(true);
+
+        const page = await activePdf.getPage(pageNumber);
+
+        if (cancelled || renderTokenRef.current !== token) return;
+
+        const canvas = canvasRef.current;
+
+        if (!canvas) return;
+
+        const context = canvas.getContext("2d", { alpha: false });
+
+        if (!context) {
+          throw new Error("Canvas indisponível.");
+        }
+
+        const baseViewport = page.getViewport({ scale: 1 });
+        const availableWidth = Math.max(260, containerWidth - (isMobile ? 24 : 80));
+        const fitScale = availableWidth / baseViewport.width;
+        const cssScale = clamp(fitScale * zoom, 0.45, 3);
+        const pixelRatio = Math.min(window.devicePixelRatio || 1, 2.5);
+        const viewport = page.getViewport({ scale: cssScale * pixelRatio });
+
+        canvas.width = Math.floor(viewport.width);
+        canvas.height = Math.floor(viewport.height);
+        canvas.style.width = `${Math.floor(baseViewport.width * cssScale)}px`;
+        canvas.style.height = `${Math.floor(baseViewport.height * cssScale)}px`;
+
+        context.fillStyle = "#ffffff";
+        context.fillRect(0, 0, canvas.width, canvas.height);
+
+        const renderTask = page.render({
+          canvasContext: context,
+          viewport,
+          canvas,
+        });
+
+        await renderTask.promise;
+      } catch (unknownError) {
+        if (!cancelled) {
+          const message =
+            unknownError instanceof Error
+              ? unknownError.message
+              : "Não foi possível renderizar esta página.";
+          setError(message);
+        }
+      } finally {
+        if (!cancelled && renderTokenRef.current === token) {
+          setRendering(false);
+        }
+      }
+    }
+
+    void render();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [pdf, pageNumber, viewMode, containerWidth, zoom, isMobile]);
+
+  const goToPage = useCallback(
+    (next: number) => {
+      setPageNumber(current => clamp(next, 1, totalPages || current));
+    },
+    [totalPages],
+  );
+
+  const previousPage = useCallback(() => {
+    goToPage(pageNumber - 1);
+  }, [goToPage, pageNumber]);
+
+  const nextPage = useCallback(() => {
+    goToPage(pageNumber + 1);
+  }, [goToPage, pageNumber]);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      previousPage,
+      nextPage,
+      goToPage,
+      zoomIn: () => setZoom(value => clamp(value + 0.15, 0.5, 2.8)),
+      zoomOut: () => setZoom(value => clamp(value - 0.15, 0.5, 2.8)),
+      zoomFit: () => setZoom(1),
+    }),
+    [previousPage, nextPage, goToPage],
+  );
+
+  const handleSelection = useCallback(() => {
+    const selection = window.getSelection();
+    const selected = selection?.toString().trim();
+
+    if (selected) {
+      const rect = selection?.rangeCount
+        ? selection.getRangeAt(0).getBoundingClientRect()
+        : null;
+
+      onTextSelected?.(selected, rect?.left ?? 0, rect?.top ?? 0);
+    }
+  }, [onTextSelected]);
+
+  const increaseFont = () => setFontSize(value => clamp(value + 2, 14, 34));
+  const decreaseFont = () => setFontSize(value => clamp(value - 2, 14, 34));
+  const increaseZoom = () => setZoom(value => clamp(value + 0.15, 0.5, 2.8));
+  const decreaseZoom = () => setZoom(value => clamp(value - 0.15, 0.5, 2.8));
+
+  if (loading) {
     return (
-      <div
-        ref={containerRef}
-        className="reader-scroll-area"
-        data-reader-theme={theme}
-        style={{
-          position: "absolute",
-          inset: 0,
-          overflowY: "auto",
-          overflowX: "hidden",
-          background: theme === "dark" ? "#111" : theme === "sepia" ? "#f4ecd8" : "#525659",
-          padding: "80px 0 64px",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-        }}
-      >
-        {/* Renderiza um wrapper placeholder para cada página */}
-        {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNum) => (
-          <div
-            key={pageNum}
-            id={`pdf-page-${pageNum}`}
-            data-page={pageNum}
-            className="pdf-page-wrapper"
-            style={{ position: "relative", margin: "0 auto 20px" }}
-          >
-            <canvas />
-            <div className="textLayer" />
-          </div>
-        ))}
+      <div className="pdf-adaptive-shell" data-book-id={bookId}>
+        <div className="pdf-adaptive-loading">
+          <div className="spinner" />
+          <span>Carregando PDF...</span>
+        </div>
       </div>
     );
   }
-);
+
+  if (error && !pdf) {
+    return (
+      <div className="pdf-adaptive-shell" data-book-id={bookId}>
+        <div className="pdf-adaptive-error">
+          <strong>Não foi possível abrir este PDF</strong>
+          <span>{error}</span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      ref={containerRef}
+      className={`pdf-adaptive-shell pdf-adaptive-${theme}`}
+      data-book-id={bookId}
+      onMouseUp={handleSelection}
+      onTouchEnd={handleSelection}
+    >
+      <div className="pdf-adaptive-toolbar">
+        <div className="pdf-adaptive-mode">
+          <button
+            type="button"
+            className={viewMode === "reflow" ? "active" : ""}
+            onClick={() => setViewMode("reflow")}
+          >
+            Modo leitura
+          </button>
+
+          <button
+            type="button"
+            className={viewMode === "page" ? "active" : ""}
+            onClick={() => setViewMode("page")}
+          >
+            Página original
+          </button>
+        </div>
+
+        <div className="pdf-adaptive-tools">
+          {viewMode === "reflow" ? (
+            <>
+              <button type="button" onClick={decreaseFont}>A-</button>
+              <button type="button" onClick={increaseFont}>A+</button>
+            </>
+          ) : (
+            <>
+              <button type="button" onClick={decreaseZoom}>−</button>
+              <button type="button" onClick={increaseZoom}>+</button>
+            </>
+          )}
+        </div>
+      </div>
+
+      <div className="pdf-adaptive-content">
+        {viewMode === "reflow" ? (
+          <article
+            className="pdf-reflow-page"
+            style={{
+              fontSize,
+              lineHeight,
+            }}
+          >
+            {pageText ? (
+              pageText.split(/\n{2,}/).map((paragraph, index) => (
+                <p key={`${pageNumber}-${index}`}>{paragraph}</p>
+              ))
+            ) : (
+              <div className="pdf-reflow-empty">
+                <strong>Esta página não possui texto selecionável.</strong>
+                <span>
+                  Ela pode ser escaneada como imagem. Use “Página original” para visualizar.
+                </span>
+                <button type="button" onClick={() => setViewMode("page")}>
+                  Ver página original
+                </button>
+              </div>
+            )}
+          </article>
+        ) : (
+          <div className="pdf-page-mode">
+            {rendering && (
+              <div className="pdf-page-rendering">
+                <div className="spinner" />
+              </div>
+            )}
+            <canvas ref={canvasRef} className="pdf-adaptive-canvas" />
+          </div>
+        )}
+      </div>
+
+      <div className="pdf-adaptive-footer">
+        <button
+          type="button"
+          onClick={previousPage}
+          disabled={pageNumber <= 1}
+          aria-label="Página anterior"
+        >
+          ‹
+        </button>
+
+        <div className="pdf-adaptive-progress">
+          <div>
+            <span>Página {pageNumber} / {totalPages}</span>
+            <span>{progress}%</span>
+          </div>
+          <div className="pdf-adaptive-track">
+            <div style={{ width: `${progress}%` }} />
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={nextPage}
+          disabled={pageNumber >= totalPages}
+          aria-label="Próxima página"
+        >
+          ›
+        </button>
+      </div>
+    </div>
+  );
+});

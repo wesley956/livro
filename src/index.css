@@ -1412,3 +1412,281 @@ input[type="range"]::-moz-range-thumb {
     display: none;
   }
 }
+
+/* =========================================================
+   PDF Adaptive / Reflow Reader
+   ========================================================= */
+
+.pdf-adaptive-shell {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  color: var(--color-ivory);
+  background:
+    radial-gradient(circle at top left, rgba(200, 169, 110, 0.12), transparent 28%),
+    radial-gradient(circle at bottom right, rgba(26, 92, 72, 0.16), transparent 30%),
+    rgba(8, 8, 10, 0.92);
+}
+
+.pdf-adaptive-loading,
+.pdf-adaptive-error {
+  min-height: 60dvh;
+  display: grid;
+  place-items: center;
+  gap: 12px;
+  text-align: center;
+  color: var(--color-ivory-dim);
+}
+
+.pdf-adaptive-error {
+  padding: 24px;
+}
+
+.pdf-adaptive-error strong {
+  display: block;
+  color: var(--color-gold);
+  font-family: var(--font-serif);
+  font-size: 1.5rem;
+  margin-bottom: 8px;
+}
+
+.pdf-adaptive-toolbar {
+  min-height: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(200, 169, 110, 0.16);
+  background: rgba(8, 8, 10, 0.72);
+  backdrop-filter: blur(14px);
+  z-index: 3;
+}
+
+.pdf-adaptive-mode,
+.pdf-adaptive-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pdf-adaptive-toolbar button,
+.pdf-adaptive-footer button,
+.pdf-reflow-empty button {
+  border: 1px solid rgba(200, 169, 110, 0.24);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.045);
+  color: var(--color-ivory);
+  padding: 8px 11px;
+  cursor: pointer;
+  font-size: 0.82rem;
+}
+
+.pdf-adaptive-toolbar button.active {
+  background: linear-gradient(135deg, rgba(139, 26, 26, 0.82), rgba(26, 92, 72, 0.62));
+  border-color: rgba(200, 169, 110, 0.48);
+  color: var(--color-gold);
+}
+
+.pdf-adaptive-toolbar button:disabled,
+.pdf-adaptive-footer button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.pdf-adaptive-content {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 16px;
+}
+
+.pdf-adaptive-content::-webkit-scrollbar {
+  width: 8px;
+}
+
+.pdf-adaptive-content::-webkit-scrollbar-thumb {
+  background: rgba(200, 169, 110, 0.26);
+  border-radius: 999px;
+}
+
+.pdf-reflow-page {
+  width: min(100%, 760px);
+  margin: 0 auto;
+  padding: clamp(22px, 5vw, 54px);
+  border: 1px solid rgba(200, 169, 110, 0.18);
+  border-radius: 24px;
+  background:
+    linear-gradient(180deg, rgba(245, 240, 232, 0.98), rgba(238, 230, 214, 0.98));
+  color: #18140f;
+  box-shadow: 0 22px 80px rgba(0, 0, 0, 0.28);
+  font-family: Georgia, "Times New Roman", serif;
+  text-align: left;
+}
+
+.pdf-reflow-page p {
+  margin: 0 0 1.15em;
+  text-indent: 1.25em;
+  letter-spacing: 0.01em;
+}
+
+.pdf-reflow-page p:first-child {
+  text-indent: 0;
+}
+
+.pdf-reflow-empty {
+  min-height: 240px;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  gap: 12px;
+  color: #3b3024;
+}
+
+.pdf-reflow-empty strong {
+  font-size: 1.2rem;
+}
+
+.pdf-reflow-empty span {
+  max-width: 420px;
+  line-height: 1.6;
+}
+
+.pdf-reflow-empty button {
+  background: rgba(139, 26, 26, 0.12);
+  color: #2b2118;
+  border-color: rgba(139, 26, 26, 0.28);
+}
+
+.pdf-page-mode {
+  position: relative;
+  width: fit-content;
+  max-width: 100%;
+  margin: 0 auto;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.08);
+  padding: 10px;
+}
+
+.pdf-adaptive-canvas {
+  display: block;
+  max-width: 100%;
+  height: auto !important;
+  background: white;
+  border-radius: 10px;
+  box-shadow: 0 22px 80px rgba(0, 0, 0, 0.35);
+}
+
+.pdf-page-rendering {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  border-radius: inherit;
+  background: rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(4px);
+}
+
+.pdf-adaptive-footer {
+  min-height: 66px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px calc(10px + env(safe-area-inset-bottom));
+  border-top: 1px solid rgba(200, 169, 110, 0.16);
+  background: rgba(8, 8, 10, 0.82);
+  backdrop-filter: blur(14px);
+  z-index: 3;
+}
+
+.pdf-adaptive-footer button {
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: 14px;
+  font-size: 1.5rem;
+}
+
+.pdf-adaptive-progress {
+  min-width: 0;
+}
+
+.pdf-adaptive-progress > div:first-child {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--color-ivory-dim);
+  font-size: 0.78rem;
+  margin-bottom: 7px;
+}
+
+.pdf-adaptive-track {
+  height: 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(200, 169, 110, 0.14);
+}
+
+.pdf-adaptive-track div {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--color-jade-bright), var(--color-gold));
+  transition: width 0.25s ease;
+}
+
+@media (max-width: 767px) {
+  .pdf-adaptive-toolbar {
+    min-height: auto;
+    padding: 8px;
+    gap: 6px;
+  }
+
+  .pdf-adaptive-mode,
+  .pdf-adaptive-tools {
+    gap: 5px;
+  }
+
+  .pdf-adaptive-toolbar button {
+    padding: 7px 8px;
+    font-size: 0.72rem;
+    border-radius: 10px;
+  }
+
+  .pdf-adaptive-content {
+    padding: 10px;
+  }
+
+  .pdf-reflow-page {
+    width: 100%;
+    padding: 24px 18px;
+    border-radius: 18px;
+    box-shadow: 0 16px 54px rgba(0, 0, 0, 0.26);
+  }
+
+  .pdf-reflow-page p {
+    text-indent: 1em;
+    margin-bottom: 1.05em;
+  }
+
+  .pdf-page-mode {
+    padding: 6px;
+    border-radius: 14px;
+  }
+
+  .pdf-adaptive-footer {
+    min-height: 62px;
+    padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
+    gap: 8px;
+  }
+
+  .pdf-adaptive-footer button {
+    min-width: 42px;
+    min-height: 42px;
+  }
+}

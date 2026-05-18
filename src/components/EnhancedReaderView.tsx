@@ -363,7 +363,7 @@ export const ReaderView: React.FC<ReaderViewProps> = ({ book, onClose }) => {
             bookId={book.id}
             theme={theme}
             annotations={annotations}
-            onTextSelected={(text, x, y) => handleTextSelected(text, x, y)}
+            onTextSelected={(text: string, x: number, y: number) => handleTextSelected(text, x, y)}
             onPageChange={(page, total) => {
               setCurrentPage(page);
               setTotalPages(total);
