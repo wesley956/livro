@@ -3615,3 +3615,548 @@ small,
     border-radius: 18px !important;
   }
 }
+
+/* =========================================================
+   Lume Modern UI — Fase 2
+   Premium Sidebar + TopBar
+   ========================================================= */
+
+.lume-modern-sidebar {
+  width: 312px;
+  min-width: 312px;
+  height: 100dvh;
+  position: relative;
+  z-index: 35;
+  background:
+    linear-gradient(180deg, rgba(18, 28, 23, 0.96), rgba(7, 10, 8, 0.98)),
+    radial-gradient(circle at 30% 0%, rgba(201, 169, 110, 0.14), transparent 32%);
+  border-right: 1px solid rgba(201, 169, 110, 0.15);
+  box-shadow: 18px 0 70px rgba(0, 0, 0, 0.32);
+  transition: width 0.24s ease, min-width 0.24s ease, transform 0.24s ease;
+  overflow: hidden;
+}
+
+.lume-modern-sidebar.collapsed {
+  width: 84px;
+  min-width: 84px;
+}
+
+.lume-modern-sidebar-inner {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: 16px 13px;
+  overflow: hidden;
+}
+
+.lume-modern-brand {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) 34px;
+  align-items: center;
+  gap: 10px;
+  min-height: 58px;
+  margin-bottom: 14px;
+}
+
+.lume-modern-brand-mark {
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border-radius: 17px;
+  background:
+    linear-gradient(145deg, rgba(201, 169, 110, 0.95), rgba(104, 72, 28, 0.95));
+  color: #11140f;
+  font-size: 1.35rem;
+  box-shadow: 0 16px 36px rgba(201, 169, 110, 0.16);
+}
+
+.lume-modern-brand-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.05;
+}
+
+.lume-modern-brand-text strong {
+  color: var(--lume-text);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 1.45rem;
+  letter-spacing: -0.04em;
+}
+
+.lume-modern-brand-text span {
+  color: var(--lume-gold);
+  font-size: 0.72rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.lume-modern-collapse {
+  width: 34px;
+  height: 34px;
+  border-radius: 12px;
+  border: 1px solid rgba(201, 169, 110, 0.18);
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--lume-gold);
+  cursor: pointer;
+}
+
+.lume-modern-sidebar.collapsed .lume-modern-brand {
+  grid-template-columns: 48px;
+  justify-content: center;
+}
+
+.lume-modern-sidebar.collapsed .lume-modern-brand-text,
+.lume-modern-sidebar.collapsed .lume-modern-collapse,
+.lume-modern-sidebar.collapsed .lume-modern-library-stats,
+.lume-modern-sidebar.collapsed .lume-modern-sidebar-section,
+.lume-modern-sidebar.collapsed .lume-modern-book-list,
+.lume-modern-sidebar.collapsed .lume-modern-nav-text {
+  display: none;
+}
+
+.lume-modern-library-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.lume-modern-library-stats div {
+  border: 1px solid rgba(201, 169, 110, 0.13);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.035);
+  padding: 12px;
+}
+
+.lume-modern-library-stats span {
+  display: block;
+  color: var(--lume-gold-bright);
+  font-size: 1.18rem;
+  font-weight: 800;
+}
+
+.lume-modern-library-stats small {
+  color: var(--lume-text-muted);
+  font-size: 0.72rem;
+}
+
+.lume-modern-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-bottom: 17px;
+}
+
+.lume-modern-nav button {
+  width: 100%;
+  min-height: 52px;
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  border: 1px solid transparent;
+  border-radius: 17px;
+  background: transparent;
+  color: var(--lume-text-soft);
+  text-align: left;
+  cursor: pointer;
+  padding: 6px;
+}
+
+.lume-modern-nav button:hover {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(201, 169, 110, 0.12);
+}
+
+.lume-modern-nav button.active {
+  background:
+    linear-gradient(135deg, rgba(201, 169, 110, 0.16), rgba(30, 107, 80, 0.12));
+  border-color: rgba(201, 169, 110, 0.28);
+  color: var(--lume-text);
+}
+
+.lume-modern-nav-icon {
+  width: 42px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.045);
+  color: var(--lume-gold);
+  font-size: 1.1rem;
+}
+
+.lume-modern-nav-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.lume-modern-nav-text strong {
+  font-size: 0.92rem;
+}
+
+.lume-modern-nav-text small {
+  color: var(--lume-text-muted);
+  font-size: 0.72rem;
+}
+
+.lume-modern-sidebar.collapsed .lume-modern-nav button {
+  grid-template-columns: 42px;
+  justify-content: center;
+}
+
+.lume-modern-sidebar-section {
+  border-top: 1px solid rgba(201, 169, 110, 0.1);
+  padding-top: 14px;
+}
+
+.lume-modern-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--lume-text-muted);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  margin-bottom: 10px;
+}
+
+.lume-modern-section-heading small {
+  color: var(--lume-gold);
+}
+
+.lume-modern-search {
+  width: 100%;
+  height: 42px;
+  border-radius: 14px;
+  padding: 0 13px;
+  font-size: 0.86rem;
+  margin-bottom: 9px;
+}
+
+.lume-modern-filter-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 42px;
+  gap: 6px;
+}
+
+.lume-modern-filter-row button {
+  border: 1px solid rgba(201, 169, 110, 0.13);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--lume-text-muted);
+  padding: 8px 4px;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+.lume-modern-filter-row button.active {
+  border-color: rgba(201, 169, 110, 0.35);
+  background: rgba(201, 169, 110, 0.12);
+  color: var(--lume-gold);
+}
+
+.lume-modern-book-list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding-top: 12px;
+  padding-right: 2px;
+}
+
+.lume-modern-book-list::-webkit-scrollbar {
+  width: 5px;
+}
+
+.lume-modern-book-list::-webkit-scrollbar-thumb {
+  background: rgba(201, 169, 110, 0.22);
+  border-radius: 999px;
+}
+
+.lume-modern-mini-book {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  border: 1px solid transparent;
+  border-radius: 17px;
+  background: transparent;
+  padding: 8px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.lume-modern-mini-book:hover {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(201, 169, 110, 0.14);
+}
+
+.lume-modern-mini-cover {
+  width: 46px;
+  height: 62px;
+  border-radius: 12px;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background:
+    linear-gradient(145deg, rgba(143, 46, 46, 0.8), rgba(20, 31, 25, 0.9));
+  color: var(--lume-gold-bright);
+  font-family: Georgia, serif;
+  font-weight: 900;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.32);
+}
+
+.lume-modern-mini-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.lume-modern-mini-info {
+  min-width: 0;
+}
+
+.lume-modern-mini-info strong {
+  display: block;
+  color: var(--lume-text);
+  font-size: 0.83rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lume-modern-mini-info > span {
+  display: block;
+  color: var(--lume-text-muted);
+  font-size: 0.72rem;
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lume-modern-mini-meta {
+  display: flex;
+  gap: 7px;
+  margin-top: 5px;
+}
+
+.lume-modern-mini-meta small {
+  color: var(--lume-gold);
+  font-size: 0.64rem;
+}
+
+.lume-modern-mini-progress {
+  height: 3px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(201, 169, 110, 0.12);
+  margin-top: 6px;
+}
+
+.lume-modern-mini-progress div {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--lume-jade-bright), var(--lume-gold));
+}
+
+.lume-modern-empty-list {
+  border: 1px dashed rgba(201, 169, 110, 0.16);
+  border-radius: 18px;
+  padding: 22px 12px;
+  display: grid;
+  place-items: center;
+  gap: 8px;
+  color: var(--lume-text-muted);
+  text-align: center;
+  font-size: 0.82rem;
+}
+
+.lume-modern-empty-list div {
+  color: var(--lume-gold);
+  font-size: 1.4rem;
+}
+
+/* Topbar */
+
+.lume-modern-topbar {
+  min-height: 96px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+  padding: 18px 22px;
+  border-bottom: 1px solid rgba(201, 169, 110, 0.13);
+  background:
+    linear-gradient(90deg, rgba(15, 22, 18, 0.82), rgba(12, 17, 14, 0.58));
+  backdrop-filter: blur(20px);
+  position: relative;
+  z-index: 10;
+}
+
+.lume-modern-topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  min-width: 0;
+}
+
+.lume-modern-mobile-menu {
+  display: none;
+  width: 44px;
+  height: 44px;
+  border-radius: 15px;
+  border: 1px solid rgba(201, 169, 110, 0.18);
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--lume-gold);
+}
+
+.lume-modern-greeting {
+  display: block;
+  color: var(--lume-gold);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+
+.lume-modern-topbar h1 {
+  margin: 0;
+  color: var(--lume-text);
+  font-size: clamp(1.6rem, 3vw, 2.35rem);
+  letter-spacing: -0.055em;
+  line-height: 1;
+}
+
+.lume-modern-topbar p {
+  margin: 7px 0 0;
+  color: var(--lume-text-muted);
+  font-size: 0.92rem;
+}
+
+.lume-modern-topbar-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.lume-modern-search-button,
+.lume-modern-import-button {
+  height: 48px;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  border-radius: 16px;
+  cursor: pointer;
+  padding: 0 15px;
+}
+
+.lume-modern-search-button {
+  border: 1px solid rgba(201, 169, 110, 0.15);
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--lume-text-soft);
+}
+
+.lume-modern-search-button span {
+  color: var(--lume-gold);
+  font-size: 1.05rem;
+}
+
+.lume-modern-search-button strong,
+.lume-modern-import-button strong {
+  font-size: 0.86rem;
+}
+
+.lume-modern-search-button kbd {
+  border: 1px solid rgba(201, 169, 110, 0.16);
+  border-radius: 8px;
+  padding: 3px 6px;
+  color: var(--lume-text-muted);
+  font-size: 0.68rem;
+}
+
+.lume-modern-import-button {
+  border: 1px solid rgba(201, 169, 110, 0.36);
+  background:
+    linear-gradient(135deg, rgba(201, 169, 110, 0.98), rgba(112, 78, 29, 0.96));
+  color: #0d120e;
+  box-shadow: 0 16px 35px rgba(201, 169, 110, 0.18);
+}
+
+.lume-modern-import-button span {
+  font-size: 1.15rem;
+  font-weight: 900;
+}
+
+/* Mobile */
+
+@media (max-width: 767px) {
+  .lume-modern-sidebar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    transform: translateX(0);
+    width: min(86vw, 320px);
+    min-width: min(86vw, 320px);
+  }
+
+  .lume-modern-sidebar.collapsed {
+    transform: translateX(-105%);
+    width: min(86vw, 320px);
+    min-width: min(86vw, 320px);
+  }
+
+  .lume-modern-sidebar.collapsed .lume-modern-brand-text,
+  .lume-modern-sidebar.collapsed .lume-modern-collapse,
+  .lume-modern-sidebar.collapsed .lume-modern-library-stats,
+  .lume-modern-sidebar.collapsed .lume-modern-sidebar-section,
+  .lume-modern-sidebar.collapsed .lume-modern-book-list,
+  .lume-modern-sidebar.collapsed .lume-modern-nav-text {
+    display: flex;
+  }
+
+  .lume-modern-sidebar.collapsed .lume-modern-brand {
+    grid-template-columns: 48px minmax(0, 1fr) 34px;
+  }
+
+  .lume-modern-topbar {
+    min-height: auto;
+    grid-template-columns: minmax(0, 1fr);
+    padding: 14px;
+  }
+
+  .lume-modern-mobile-menu {
+    display: grid;
+    place-items: center;
+  }
+
+  .lume-modern-topbar-actions {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    width: 100%;
+  }
+
+  .lume-modern-search-button {
+    justify-content: flex-start;
+  }
+
+  .lume-modern-search-button kbd {
+    display: none;
+  }
+
+  .lume-modern-import-button {
+    padding: 0 13px;
+  }
+
+  .lume-modern-import-button strong {
+    display: none;
+  }
+}
