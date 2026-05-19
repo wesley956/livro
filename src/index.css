@@ -4160,3 +4160,1146 @@ small,
     display: none;
   }
 }
+
+/* =========================================================
+   Reader V5 Fixes — continuous text, stable controls, image-page fallback
+   ========================================================= */
+
+.lume-r4-topbar.always-visible,
+.lume-r4-footer.always-visible {
+  opacity: 1 !important;
+  transform: none !important;
+  pointer-events: auto !important;
+  visibility: visible !important;
+}
+
+.lume-r4-shell {
+  isolation: isolate;
+}
+
+.lume-r4-topbar {
+  position: relative;
+  z-index: 50;
+}
+
+.lume-r4-footer {
+  position: relative;
+  z-index: 50;
+}
+
+.lume-r4-tabs button {
+  min-height: 42px;
+  touch-action: manipulation;
+}
+
+.lume-r4-icon-button,
+.lume-r4-footer > button,
+.lume-r4-page-pill {
+  touch-action: manipulation;
+}
+
+.lume-r4-content {
+  scroll-behavior: auto;
+}
+
+.lume-r4-text-continuous {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  align-items: center;
+  padding-bottom: 18px;
+}
+
+.lume-r4-text-continuous .lume-r4-text-page {
+  min-height: auto;
+  width: min(100%, 760px);
+}
+
+.lume-r4-page-marker {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 18px;
+  padding: 6px 11px;
+  border: 1px solid rgba(201, 169, 110, 0.22);
+  border-radius: 999px;
+  background: rgba(201, 169, 110, 0.08);
+  color: var(--r4-accent);
+  font-family: var(--font-body, Inter, system-ui, sans-serif);
+  font-size: 0.72em;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.lume-r4-text-loading {
+  min-height: 220px;
+  display: grid;
+  place-items: center;
+  gap: 12px;
+  text-align: center;
+  color: currentColor;
+  opacity: 0.82;
+}
+
+.lume-r4-text-loading strong {
+  color: var(--r4-accent);
+}
+
+.lume-r4-text-loading span {
+  opacity: 0.72;
+  line-height: 1.5;
+}
+
+.lume-r4-no-text {
+  border: 1px dashed rgba(201, 169, 110, 0.22);
+  border-radius: 22px;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(201, 169, 110, 0.09), transparent 45%),
+    rgba(255, 255, 255, 0.025);
+  padding: 28px 20px;
+}
+
+.lume-r4-no-text::before {
+  content: "▧";
+  display: block;
+  font-size: 2.4rem;
+  color: var(--r4-accent);
+  opacity: 0.85;
+}
+
+.lume-r4-continuous-list {
+  width: 100%;
+  gap: 14px;
+}
+
+.lume-r4-continuous-page {
+  scroll-margin-top: 12px;
+}
+
+.lume-r4-continuous-label {
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  z-index: 2;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.68);
+  color: #f8e6b1;
+  font-size: 0.68rem;
+  font-weight: 800;
+  backdrop-filter: blur(8px);
+}
+
+.lume-r4-sheet,
+.lume-r4-goto {
+  z-index: 120;
+}
+
+.lume-r4-backdrop {
+  z-index: 110;
+}
+
+@media (max-width: 767px) {
+  .lume-r4-topbar {
+    min-height: calc(64px + env(safe-area-inset-top));
+    padding-top: calc(9px + env(safe-area-inset-top));
+  }
+
+  .lume-r4-tabs {
+    gap: 5px;
+  }
+
+  .lume-r4-tabs button {
+    min-height: 43px;
+    font-size: 0.78rem;
+    padding-left: 5px;
+    padding-right: 5px;
+  }
+
+  .lume-r4-icon-button {
+    width: 44px;
+    height: 44px;
+  }
+
+  .lume-r4-content {
+    padding: 8px;
+  }
+
+  .lume-r4-text-continuous {
+    gap: 12px;
+    padding-bottom: 12px;
+  }
+
+  .lume-r4-text-continuous .lume-r4-text-page {
+    width: 100%;
+  }
+
+  .lume-r4-page-marker {
+    margin-bottom: 14px;
+  }
+
+  .lume-r4-no-text {
+    min-height: 240px;
+    padding: 24px 16px;
+  }
+
+  .lume-r4-footer {
+    min-height: calc(72px + env(safe-area-inset-bottom));
+  }
+
+  .lume-r4-page-pill {
+    min-width: 0;
+  }
+}
+
+/* =========================================================
+   EPUB Reader V5 — Android/WebView fixes
+   ========================================================= */
+
+.lume-epub-v5-shell {
+  --epub-bg: #11130f;
+  --epub-surface: #16161d;
+  --epub-text: #f0ede8;
+  --epub-soft: #a09890;
+  --epub-gold: #c9a96e;
+  --epub-border: rgba(201, 169, 110, 0.14);
+
+  width: 100%;
+  height: 100dvh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--epub-bg);
+  color: var(--epub-text);
+  overflow: hidden;
+}
+
+.lume-epub-v5-shell[data-reader-theme="sepia"] {
+  --epub-bg: #1e1a12;
+  --epub-surface: #241d13;
+  --epub-text: #d6c8a8;
+  --epub-soft: #a99d83;
+}
+
+.lume-epub-v5-shell[data-reader-theme="light"] {
+  --epub-bg: #f5f0e8;
+  --epub-surface: #ede9e0;
+  --epub-text: #1d1a16;
+  --epub-soft: #655f56;
+}
+
+.lume-epub-v5-topbar {
+  flex: 0 0 auto;
+  min-height: calc(62px + env(safe-area-inset-top));
+  padding: calc(10px + env(safe-area-inset-top)) 14px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--epub-border);
+  background: var(--epub-surface);
+  z-index: 20;
+}
+
+.lume-epub-v5-topbar strong {
+  display: block;
+  color: var(--epub-gold);
+  letter-spacing: 0.12em;
+}
+
+.lume-epub-v5-topbar span {
+  display: block;
+  color: var(--epub-soft);
+  font-size: 0.76rem;
+  margin-top: 2px;
+}
+
+.lume-epub-v5-topbar button {
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--epub-border);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--epub-text);
+}
+
+.lume-epub-v5-content {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 10% 0%, rgba(201, 169, 110, 0.08), transparent 30%),
+    var(--epub-bg);
+}
+
+.lume-epub-v5-frame {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+.lume-epub-v5-footer {
+  flex: 0 0 auto;
+  min-height: calc(68px + env(safe-area-inset-bottom));
+  padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) 52px;
+  gap: 10px;
+  align-items: center;
+  border-top: 1px solid var(--epub-border);
+  background: var(--epub-surface);
+  z-index: 20;
+}
+
+.lume-epub-v5-footer button {
+  width: 52px;
+  height: 48px;
+  border: 1px solid var(--epub-border);
+  border-radius: 15px;
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--epub-text);
+  font-size: 2rem;
+}
+
+.lume-epub-v5-footer > div {
+  min-width: 0;
+}
+
+.lume-epub-v5-footer span {
+  display: block;
+  color: var(--epub-soft);
+  font-size: 0.76rem;
+  text-align: center;
+  margin-bottom: 7px;
+}
+
+.lume-epub-v5-footer div div {
+  height: 5px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(201, 169, 110, 0.13);
+}
+
+.lume-epub-v5-footer i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #62d6a2, var(--epub-gold));
+}
+
+/* EPUB V5 overlay fix */
+.lume-epub-v5-content {
+  position: relative;
+}
+
+.lume-epub-v5-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  background: rgba(9, 12, 10, 0.82);
+  backdrop-filter: blur(4px);
+}
+
+/* =========================================================
+   EPUB Reader V6 — continuous scroll mode
+   ========================================================= */
+
+.lume-epub-v6-shell {
+  --epub-bg: #11130f;
+  --epub-surface: #16161d;
+  --epub-text: #f0ede8;
+  --epub-soft: #a09890;
+  --epub-gold: #c9a96e;
+  --epub-border: rgba(201, 169, 110, 0.14);
+
+  width: 100%;
+  height: 100dvh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--epub-bg);
+  color: var(--epub-text);
+  overflow: hidden;
+}
+
+.lume-epub-v6-shell[data-reader-theme="sepia"] {
+  --epub-bg: #1e1a12;
+  --epub-surface: #241d13;
+  --epub-text: #d6c8a8;
+  --epub-soft: #a99d83;
+}
+
+.lume-epub-v6-shell[data-reader-theme="light"] {
+  --epub-bg: #f5f0e8;
+  --epub-surface: #ede9e0;
+  --epub-text: #1d1a16;
+  --epub-soft: #655f56;
+}
+
+.lume-epub-v6-topbar {
+  flex: 0 0 auto;
+  min-height: calc(62px + env(safe-area-inset-top));
+  padding: calc(10px + env(safe-area-inset-top)) 14px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--epub-border);
+  background: var(--epub-surface);
+  z-index: 20;
+}
+
+.lume-epub-v6-topbar strong {
+  display: block;
+  color: var(--epub-gold);
+  letter-spacing: 0.08em;
+}
+
+.lume-epub-v6-topbar span {
+  display: block;
+  color: var(--epub-soft);
+  font-size: 0.76rem;
+  margin-top: 2px;
+}
+
+.lume-epub-v6-topbar button {
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--epub-border);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--epub-text);
+}
+
+.lume-epub-v6-content {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 10% 0%, rgba(201, 169, 110, 0.08), transparent 30%),
+    var(--epub-bg);
+}
+
+.lume-epub-v6-frame {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.lume-epub-v6-frame iframe,
+.lume-epub-v6-frame > div {
+  max-width: 100% !important;
+}
+
+.lume-epub-v6-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  background: rgba(9, 12, 10, 0.82);
+  backdrop-filter: blur(4px);
+}
+
+.lume-epub-v6-footer {
+  flex: 0 0 auto;
+  min-height: calc(68px + env(safe-area-inset-bottom));
+  padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) 52px;
+  gap: 10px;
+  align-items: center;
+  border-top: 1px solid var(--epub-border);
+  background: var(--epub-surface);
+  z-index: 20;
+}
+
+.lume-epub-v6-footer button {
+  width: 52px;
+  height: 48px;
+  border: 1px solid var(--epub-border);
+  border-radius: 15px;
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--epub-text);
+  font-size: 2rem;
+}
+
+.lume-epub-v6-footer span {
+  display: block;
+  color: var(--epub-soft);
+  font-size: 0.76rem;
+  text-align: center;
+  margin-bottom: 7px;
+}
+
+.lume-epub-v6-footer div div {
+  height: 5px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(201, 169, 110, 0.13);
+}
+
+.lume-epub-v6-footer i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #62d6a2, var(--epub-gold));
+}
+
+/* EPUB V6.1 — shared reading settings polish */
+.lume-epub-v6-shell[data-reader-theme="jade"] {
+  --epub-bg: #0d1713;
+  --epub-surface: #121f19;
+  --epub-text: #eef4ec;
+  --epub-soft: #a9b8ad;
+  --epub-gold: #7bd6a3;
+  --epub-border: rgba(201, 169, 110, 0.14);
+}
+
+.lume-epub-v6-frame iframe {
+  border: 0 !important;
+  background: transparent !important;
+}
+
+.lume-epub-v6-frame {
+  background:
+    radial-gradient(circle at 50% 0%, rgba(201, 169, 110, 0.07), transparent 34%),
+    var(--epub-bg);
+}
+
+@media (max-width: 767px) {
+  .lume-epub-v6-topbar strong {
+    font-size: 0.9rem;
+  }
+
+  .lume-epub-v6-topbar span {
+    font-size: 0.72rem;
+  }
+}
+
+/* =========================================================
+   EPUB Clean Mode — uses only EnhancedReaderView controls
+   ========================================================= */
+
+.lume-epub-clean-shell {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(201, 169, 110, 0.07), transparent 34%),
+    #11130f;
+}
+
+.lume-epub-clean-shell[data-reader-theme="sepia"] {
+  background:
+    radial-gradient(circle at 50% 0%, rgba(201, 169, 110, 0.07), transparent 34%),
+    #1e1a12;
+}
+
+.lume-epub-clean-shell[data-reader-theme="light"] {
+  background:
+    radial-gradient(circle at 50% 0%, rgba(173, 133, 51, 0.08), transparent 34%),
+    #f5f0e8;
+}
+
+.lume-epub-clean-shell[data-reader-theme="jade"] {
+  background:
+    radial-gradient(circle at 50% 0%, rgba(123, 214, 163, 0.08), transparent 34%),
+    #0d1713;
+}
+
+.lume-epub-clean-frame {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.lume-epub-clean-frame iframe {
+  border: 0 !important;
+  background: transparent !important;
+}
+
+.lume-epub-clean-frame iframe,
+.lume-epub-clean-frame > div {
+  max-width: 100% !important;
+}
+
+.lume-epub-clean-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  background: rgba(9, 12, 10, 0.82);
+  backdrop-filter: blur(4px);
+}
+
+/* =========================================================
+   Reader Controls Unification
+   Only EnhancedReaderView owns settings/top actions.
+   PDF keeps only mode tabs: Texto / Página / Contínuo.
+   ========================================================= */
+
+.lume-r4-topbar .lume-r4-icon-button {
+  display: none !important;
+}
+
+.lume-r4-topbar .lume-r4-brand {
+  display: none !important;
+}
+
+.lume-r4-topbar {
+  grid-template-columns: minmax(0, 1fr) !important;
+  min-height: auto !important;
+  padding: 8px 10px !important;
+  border-bottom: 1px solid rgba(201, 169, 110, 0.1) !important;
+  background: rgba(10, 14, 12, 0.7) !important;
+}
+
+.lume-r4-tabs {
+  width: min(100%, 520px);
+  margin: 0 auto;
+}
+
+@media (max-width: 767px) {
+  .lume-r4-topbar {
+    padding: 7px 8px !important;
+  }
+
+  .lume-r4-tabs {
+    width: 100%;
+  }
+}
+
+/* =========================================================
+   Unified Reader Settings — PDF + EPUB
+   ========================================================= */
+
+.lume-reader-unified {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  color: #f0ede8;
+}
+
+.lume-reader-unified-toolbar {
+  flex: 0 0 auto;
+  min-height: calc(58px + env(safe-area-inset-top));
+  padding: calc(8px + env(safe-area-inset-top)) 12px 8px;
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) 42px 42px;
+  gap: 8px;
+  align-items: center;
+  background: rgba(14, 15, 16, 0.92);
+  border-bottom: 1px solid rgba(201, 169, 110, 0.14);
+  backdrop-filter: blur(16px);
+  z-index: 50;
+}
+
+.lume-reader-unified-toolbar button {
+  width: 42px;
+  height: 42px;
+  border: 1px solid rgba(201, 169, 110, 0.16);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.035);
+  color: #f0ede8;
+  cursor: pointer;
+}
+
+.lume-reader-unified-toolbar button.active,
+.lume-reader-unified-toolbar button.has-notes {
+  border-color: rgba(201, 169, 110, 0.42);
+  color: #c9a96e;
+}
+
+.lume-reader-unified-toolbar button small {
+  margin-left: 3px;
+  font-size: 0.68rem;
+}
+
+.lume-reader-unified-title {
+  min-width: 0;
+}
+
+.lume-reader-unified-title strong {
+  display: block;
+  color: #f0ede8;
+  font-size: 0.92rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lume-reader-unified-title span {
+  display: block;
+  color: #8f8678;
+  font-size: 0.72rem;
+  margin-top: 2px;
+}
+
+.lume-reader-unified-content {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+.lume-reader-settings-panel {
+  position: fixed;
+  right: 14px;
+  top: calc(72px + env(safe-area-inset-top));
+  z-index: 90;
+  width: min(360px, calc(100vw - 28px));
+  max-height: calc(100dvh - 100px);
+  overflow: auto;
+  border: 1px solid rgba(201, 169, 110, 0.2);
+  border-radius: 22px;
+  background: rgba(22, 22, 29, 0.96);
+  color: #f0ede8;
+  padding: 16px;
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(18px);
+}
+
+.lume-reader-settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.lume-reader-settings-header strong {
+  color: #c9a96e;
+}
+
+.lume-reader-settings-header button {
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(201, 169, 110, 0.16);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #f0ede8;
+}
+
+.lume-reader-settings-panel section {
+  padding-top: 14px;
+  margin-top: 14px;
+  border-top: 1px solid rgba(201, 169, 110, 0.12);
+}
+
+.lume-reader-settings-panel section:first-of-type {
+  border-top: 0;
+  margin-top: 0;
+  padding-top: 0;
+}
+
+.lume-reader-settings-panel label {
+  display: block;
+  color: #8f8678;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 10px;
+}
+
+.lume-reader-segment {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.lume-reader-segment.four {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.lume-reader-segment button,
+.lume-reader-control-row button,
+.lume-reader-zoom-row button {
+  border: 1px solid rgba(201, 169, 110, 0.16);
+  border-radius: 13px;
+  background: rgba(255, 255, 255, 0.045);
+  color: #f0ede8;
+  padding: 10px 7px;
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.lume-reader-segment button.active {
+  border-color: rgba(201, 169, 110, 0.48);
+  background: rgba(201, 169, 110, 0.16);
+  color: #c9a96e;
+}
+
+.lume-reader-control-row {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) 48px;
+  gap: 10px;
+  align-items: center;
+}
+
+.lume-reader-control-row input {
+  width: 100%;
+  accent-color: #c9a96e;
+}
+
+.lume-reader-zoom-row {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) 52px;
+  gap: 8px;
+}
+
+.lume-reader-unified-footer {
+  flex: 0 0 auto;
+  min-height: calc(58px + env(safe-area-inset-bottom));
+  padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) 52px;
+  gap: 10px;
+  align-items: center;
+  background: rgba(14, 15, 16, 0.92);
+  border-top: 1px solid rgba(201, 169, 110, 0.14);
+}
+
+.lume-reader-unified-footer button {
+  width: 52px;
+  height: 42px;
+  border: 1px solid rgba(201, 169, 110, 0.16);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.035);
+  color: #f0ede8;
+  font-size: 1.7rem;
+}
+
+.lume-reader-unified-footer span {
+  text-align: center;
+  color: #8f8678;
+  font-size: 0.82rem;
+}
+
+.lume-reader-note-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.7);
+}
+
+.lume-reader-note-dialog {
+  width: min(100%, 420px);
+  border: 1px solid rgba(201, 169, 110, 0.18);
+  border-radius: 20px;
+  background: #18181b;
+  padding: 22px;
+  color: #f0ede8;
+}
+
+.lume-reader-note-dialog p {
+  color: #8f8678;
+  font-size: 0.78rem;
+  margin: 0 0 8px;
+}
+
+.lume-reader-note-dialog blockquote {
+  margin: 0 0 16px;
+  padding: 12px;
+  border-left: 3px solid #c9a96e;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #b8ad9b;
+  font-size: 0.88rem;
+}
+
+.lume-reader-note-dialog textarea {
+  width: 100%;
+  min-height: 110px;
+  border-radius: 14px;
+  padding: 12px;
+}
+
+.lume-reader-note-dialog > div {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.lume-reader-note-dialog button {
+  border-radius: 13px;
+  border: 1px solid rgba(201, 169, 110, 0.18);
+  padding: 10px 14px;
+}
+
+.lume-reader-note-dialog button:last-child {
+  background: #c9a96e;
+  color: #0d0d0f;
+  font-weight: 900;
+}
+
+@media (max-width: 767px) {
+  .lume-reader-settings-panel {
+    left: 10px;
+    right: 10px;
+    top: auto;
+    bottom: calc(12px + env(safe-area-inset-bottom));
+    width: auto;
+    max-height: 72dvh;
+  }
+
+  .lume-reader-segment.four {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .lume-reader-unified-toolbar {
+    grid-template-columns: 42px minmax(0, 1fr) 42px 42px;
+  }
+}
+
+/* EPUB scroll loop fix */
+.lume-epub-clean-frame {
+  overflow: hidden !important;
+  overscroll-behavior: contain;
+}
+
+.lume-epub-clean-frame .epub-container {
+  height: 100% !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  scroll-behavior: auto !important;
+}
+
+.lume-epub-clean-frame .epub-view {
+  max-width: 100% !important;
+}
+
+.lume-epub-clean-frame iframe {
+  max-width: 100% !important;
+}
+
+/* EPUB V6.2 — stable chapter scroll, no continuous-manager loop */
+.lume-epub-clean-frame {
+  overflow: hidden !important;
+}
+
+.lume-epub-clean-frame .epub-container {
+  height: 100% !important;
+  width: 100% !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  scroll-behavior: auto !important;
+}
+
+.lume-epub-clean-frame .epub-view {
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+.lume-epub-clean-frame iframe {
+  border: 0 !important;
+  max-width: 100% !important;
+}
+
+/* EPUB V6.3 — chapter scroll mode without pagination */
+.lume-epub-clean-frame {
+  height: 100% !important;
+  overflow: hidden !important;
+}
+
+.lume-epub-clean-frame .epub-container {
+  height: 100% !important;
+  width: 100% !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  scroll-behavior: auto !important;
+}
+
+.lume-epub-clean-frame .epub-view {
+  width: 100% !important;
+  max-width: 100% !important;
+  height: auto !important;
+  min-height: 100% !important;
+  overflow: visible !important;
+}
+
+.lume-epub-clean-frame iframe {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-height: 100% !important;
+  border: 0 !important;
+}
+
+/* EPUB final scroll stabilization */
+.lume-epub-clean-frame {
+  height: 100% !important;
+  overflow: hidden !important;
+}
+
+.lume-epub-clean-frame .epub-container {
+  height: 100% !important;
+  width: 100% !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  scroll-behavior: auto !important;
+}
+
+.lume-epub-clean-frame .epub-view {
+  width: 100% !important;
+  max-width: 100% !important;
+  height: auto !important;
+  min-height: 100% !important;
+  overflow: visible !important;
+}
+
+.lume-epub-clean-frame iframe {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-height: 100% !important;
+  border: 0 !important;
+}
+
+/* =========================================================
+   EPUB Manual Reader — true continuous chapter scroll
+   ========================================================= */
+
+.lume-epub-manual-shell {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: #11130f;
+  color: #e9dfc8;
+}
+
+.lume-epub-manual-shell[data-reader-theme="sepia"] {
+  background: #1e1a12;
+  color: #d6c8a8;
+}
+
+.lume-epub-manual-shell[data-reader-theme="light"] {
+  background: #f5f0e8;
+  color: #1d1a16;
+}
+
+.lume-epub-manual-shell[data-reader-theme="jade"] {
+  background: #0d1713;
+  color: #e9f2e8;
+}
+
+.lume-epub-manual-scroll {
+  width: 100%;
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  scroll-behavior: auto;
+}
+
+.lume-epub-manual-page {
+  margin: 0 auto;
+  box-sizing: border-box;
+  min-height: 100%;
+  word-break: normal;
+  overflow-wrap: break-word;
+}
+
+.lume-epub-manual-page p {
+  margin-top: 0;
+  margin-bottom: 1.05em;
+  text-align: left;
+}
+
+.lume-epub-manual-page img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 18px auto;
+}
+
+.lume-epub-manual-page a {
+  color: #c9a96e;
+}
+
+.lume-epub-manual-page h1,
+.lume-epub-manual-page h2,
+.lume-epub-manual-page h3 {
+  color: inherit;
+  line-height: 1.22;
+}
+
+.lume-epub-manual-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  background: rgba(9, 12, 10, 0.82);
+  backdrop-filter: blur(4px);
+}
+
+/* EPUB stable render — opens reliably through epubjs */
+.lume-epub-stable-shell {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: #11130f;
+}
+
+.lume-epub-stable-shell[data-reader-theme="sepia"] {
+  background: #1e1a12;
+}
+
+.lume-epub-stable-shell[data-reader-theme="light"] {
+  background: #f5f0e8;
+}
+
+.lume-epub-stable-shell[data-reader-theme="jade"] {
+  background: #0d1713;
+}
+
+.lume-epub-stable-frame {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.lume-epub-stable-frame iframe {
+  border: 0 !important;
+  background: transparent !important;
+}
+
+.lume-epub-stable-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  background: rgba(9, 12, 10, 0.82);
+  backdrop-filter: blur(4px);
+}

@@ -25,8 +25,14 @@ interface PdfReaderProps {
   fileUrl: string;
   bookId: string;
   scale?: number;
-  theme?: "light" | "dark" | "sepia" | string;
+  theme?: "light" | "dark" | "sepia" | "jade" | string;
+  fontSize?: number;
+  fontFamily?: string;
+  lineHeight?: number;
+  readerWidth?: number;
+  pageMargin?: number;
   annotations?: unknown[];
+  initialPage?: number;
   onTextSelected?: (text: string, x: number, y: number) => void;
   onPageChange?: (pageNumber: number, progress: number) => void;
   onHighlight?: (text: string, pageNumber: number) => void;
@@ -43,6 +49,13 @@ type TextItemLike = {
   height?: number;
 };
 
+type ExtractedPageText = {
+  page: number;
+  text: string;
+  hasText: boolean;
+  loading: boolean;
+};
+
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
@@ -50,6 +63,37 @@ function clamp(value: number, min: number, max: number) {
 function isMobileDevice() {
   if (typeof window === "undefined") return false;
   return window.matchMedia("(max-width: 767px)").matches;
+}
+
+function getSavedPage(bookId: string, fallback = 1) {
+  try {
+    const raw = localStorage.getItem(`lume-reader-page:${bookId}`);
+    const page = raw ? Number(raw) : fallback;
+    return Number.isFinite(page) && page > 0 ? Math.round(page) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function saveReaderPosition(bookId: string, page: number, progress: number) {
+  try {
+    localStorage.setItem(`lume-reader-page:${bookId}`, String(page));
+    localStorage.setItem(
+      `lume-reader-progress:${bookId}`,
+      JSON.stringify({
+        page,
+        progress,
+        updatedAt: new Date().toISOString(),
+      }),
+    );
+  } catch {
+    // localStorage pode falhar em alguns WebViews privados; não deve quebrar leitura.
+  }
+}
+
+function getThemeName(theme: string | undefined): ReaderTheme {
+  if (theme === "light" || theme === "sepia" || theme === "jade") return theme;
+  return "dark";
 }
 
 function normalizePdfText(items: TextItemLike[]): string {
@@ -109,16 +153,9 @@ function normalizePdfText(items: TextItemLike[]): string {
     previousY = line.y;
   }
 
-  if (current.trim()) {
-    paragraphs.push(current.trim());
-  }
+  if (current.trim()) paragraphs.push(current.trim());
 
   return paragraphs.join("\n\n");
-}
-
-function getThemeName(theme: string | undefined): ReaderTheme {
-  if (theme === "light" || theme === "sepia" || theme === "jade") return theme;
-  return "dark";
 }
 
 export const PdfReader = forwardRef<PdfReaderHandle, PdfReaderProps>(function PdfReader(
@@ -127,7 +164,13 @@ export const PdfReader = forwardRef<PdfReaderHandle, PdfReaderProps>(function Pd
     bookId,
     scale: initialScale = 1,
     theme = "dark",
+    fontSize: controlledFontSize,
+    fontFamily: controlledFontFamily,
+    lineHeight: controlledLineHeight,
+    readerWidth: controlledReaderWidth,
+    pageMargin: controlledPageMargin,
     annotations: _annotations = [],
+    initialPage = 1,
     onTextSelected,
     onPageChange,
     onHighlight: _onHighlight,
@@ -135,27 +178,26 @@ export const PdfReader = forwardRef<PdfReaderHandle, PdfReaderProps>(function Pd
   ref,
 ) {
   const [pdf, setPdf] = useState<pdfjs.PDFDocumentProxy | null>(null);
-  const [pageNumber, setPageNumber] = useState(1);
+  const [pageNumber, setPageNumber] = useState(() => getSavedPage(bookId, initialPage || 1));
   const [totalPages, setTotalPages] = useState(1);
 
-  const [viewMode, setViewMode] = useState<ViewMode>(() =>
-    isMobileDevice() ? "text" : "page",
-  );
+  const [viewMode, setViewMode] = useState<ViewMode>(() => (isMobileDevice() ? "text" : "page"));
   const [readerTheme, setReaderTheme] = useState<ReaderTheme>(() => getThemeName(theme));
-  const [fontSize, setFontSize] = useState(() => (isMobileDevice() ? 20 : 22));
-  const [lineHeight, setLineHeight] = useState(1.72);
-  const [readerWidth, setReaderWidth] = useState(760);
+  const [fontSize, setFontSize] = useState(() => controlledFontSize ?? (isMobileDevice() ? 20 : 22));
+  const [fontFamily, setFontFamily] = useState(controlledFontFamily ?? 'Georgia, serif');
+  const [lineHeight, setLineHeight] = useState(controlledLineHeight ?? 1.72);
+  const [readerWidth, setReaderWidth] = useState(controlledReaderWidth ?? 760);
+  const [pageMargin, setPageMargin] = useState(controlledPageMargin ?? 28);
   const [zoom, setZoom] = useState(initialScale);
 
-  const [pageText, setPageText] = useState("");
-  const [pageHasText, setPageHasText] = useState(true);
+  const [continuousTextPages, setContinuousTextPages] = useState<ExtractedPageText[]>([]);
   const [containerWidth, setContainerWidth] = useState(360);
   const [loading, setLoading] = useState(true);
   const [rendering, setRendering] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [goToOpen, setGoToOpen] = useState(false);
-  const [goToValue, setGoToValue] = useState("1");
+  const [goToValue, setGoToValue] = useState(() => String(getSavedPage(bookId, initialPage || 1)));
   const [orientationTick, setOrientationTick] = useState(0);
 
   const shellRef = useRef<HTMLDivElement | null>(null);
@@ -164,11 +206,37 @@ export const PdfReader = forwardRef<PdfReaderHandle, PdfReaderProps>(function Pd
   const renderTokenRef = useRef(0);
   const touchStartX = useRef(0);
   const touchStartY = useRef(0);
+  const lastReportedPageRef = useRef(pageNumber);
 
   const progress = useMemo(() => {
     if (!totalPages) return 0;
     return Math.round((pageNumber / totalPages) * 100);
   }, [pageNumber, totalPages]);
+
+  useEffect(() => {
+    setReaderTheme(getThemeName(theme));
+  }, [theme]);
+
+  useEffect(() => {
+    if (typeof controlledFontSize === 'number') setFontSize(controlledFontSize);
+  }, [controlledFontSize]);
+
+  useEffect(() => {
+    if (controlledFontFamily) setFontFamily(controlledFontFamily);
+  }, [controlledFontFamily]);
+
+  useEffect(() => {
+    if (typeof controlledLineHeight === 'number') setLineHeight(controlledLineHeight);
+  }, [controlledLineHeight]);
+
+  useEffect(() => {
+    if (typeof controlledReaderWidth === 'number') setReaderWidth(controlledReaderWidth);
+  }, [controlledReaderWidth]);
+
+  useEffect(() => {
+    if (typeof controlledPageMargin === 'number') setPageMargin(controlledPageMargin);
+  }, [controlledPageMargin]);
+
 
   useEffect(() => {
     let cancelled = false;
@@ -190,11 +258,17 @@ export const PdfReader = forwardRef<PdfReaderHandle, PdfReaderProps>(function Pd
         const loaded = await task.promise;
         if (cancelled) return;
 
+        const savedPage = clamp(getSavedPage(bookId, initialPage || 1), 1, loaded.numPages || 1);
+
         setPdf(loaded);
         setTotalPages(Math.max(1, loaded.numPages || 1));
-        setPageNumber(1);
-        setGoToValue("1");
+        setPageNumber(savedPage);
+        setGoToValue(String(savedPage));
         setLoading(false);
+
+        window.setTimeout(() => {
+          contentRef.current?.scrollTo({ top: 0, behavior: "auto" });
+        }, 80);
       } catch (unknownError) {
         const message =
           unknownError instanceof Error ? unknownError.message : "Não foi possível abrir este PDF.";
@@ -211,7 +285,7 @@ export const PdfReader = forwardRef<PdfReaderHandle, PdfReaderProps>(function Pd
     return () => {
       cancelled = true;
     };
-  }, [fileUrl]);
+  }, [bookId, fileUrl, initialPage]);
 
   useEffect(() => {
     const updateSize = () => {
@@ -249,39 +323,81 @@ export const PdfReader = forwardRef<PdfReaderHandle, PdfReaderProps>(function Pd
 
   useEffect(() => {
     if (!pdf) return;
+
+    saveReaderPosition(bookId, pageNumber, progress);
     onPageChange?.(pageNumber, progress);
-  }, [pdf, pageNumber, progress, onPageChange]);
+  }, [bookId, pdf, pageNumber, progress, onPageChange]);
 
   useEffect(() => {
-    if (!pdf) return;
+    if (!pdf || viewMode !== "text") return;
 
     const activePdf = pdf;
     let cancelled = false;
 
-    async function extractText() {
-      try {
-        const page = await activePdf.getPage(pageNumber);
-        const content = await page.getTextContent();
-        const text = normalizePdfText(content.items as TextItemLike[]);
+    const start = clamp(pageNumber, 1, activePdf.numPages);
+    const end = clamp(pageNumber + 7, 1, activePdf.numPages);
 
-        if (!cancelled) {
-          setPageText(text);
-          setPageHasText(text.trim().length > 24);
-        }
-      } catch {
-        if (!cancelled) {
-          setPageText("");
-          setPageHasText(false);
+    const initialPages: ExtractedPageText[] = [];
+
+    for (let page = start; page <= end; page += 1) {
+      initialPages.push({
+        page,
+        text: "",
+        hasText: true,
+        loading: true,
+      });
+    }
+
+    setContinuousTextPages(initialPages);
+
+    async function extractRange() {
+      for (let pageNum = start; pageNum <= end; pageNum += 1) {
+        if (cancelled) return;
+
+        try {
+          const page = await activePdf.getPage(pageNum);
+          const content = await page.getTextContent();
+          const text = normalizePdfText(content.items as TextItemLike[]);
+
+          if (cancelled) return;
+
+          setContinuousTextPages(current =>
+            current.map(item =>
+              item.page === pageNum
+                ? {
+                    page: pageNum,
+                    text,
+                    hasText: text.trim().length > 24,
+                    loading: false,
+                  }
+                : item,
+            ),
+          );
+        } catch {
+          if (cancelled) return;
+
+          setContinuousTextPages(current =>
+            current.map(item =>
+              item.page === pageNum
+                ? {
+                    page: pageNum,
+                    text: "",
+                    hasText: false,
+                    loading: false,
+                  }
+                : item,
+            ),
+          );
         }
       }
     }
 
-    void extractText();
+    void extractRange();
 
     return () => {
       cancelled = true;
     };
-  }, [pdf, pageNumber]);
+  }, [pdf, pageNumber, viewMode]);
 
   useEffect(() => {
     if (!pdf || viewMode !== "page" || !canvasRef.current) return;
@@ -294,6 +410,7 @@ export const PdfReader = forwardRef<PdfReaderHandle, PdfReaderProps>(function Pd
     async function renderPage() {
       try {
         setRendering(true);
+        setError(null);
 
         const page = await activePdf.getPage(pageNumber);
         if (cancelled || renderTokenRef.current !== token) return;
@@ -406,6 +523,7 @@ export const PdfReader = forwardRef<PdfReaderHandle, PdfReaderProps>(function Pd
   const changeMode = (mode: ViewMode) => {
     setViewMode(mode);
     setSettingsOpen(false);
+    contentRef.current?.scrollTo({ top: 0, behavior: "auto" });
   };
 
   const submitGoTo = () => {
@@ -416,13 +534,21 @@ export const PdfReader = forwardRef<PdfReaderHandle, PdfReaderProps>(function Pd
     setGoToOpen(false);
   };
 
+  const updateVisibleTextPage = (page: number) => {
+    if (page === lastReportedPageRef.current) return;
+
+    lastReportedPageRef.current = page;
+    setPageNumber(page);
+    setGoToValue(String(page));
+  };
+
   if (loading) {
     return (
       <div className="lume-r4-shell" data-reader-theme={readerTheme} data-book-id={bookId}>
         <div className="lume-r4-loading">
           <div className="spinner" />
           <strong>Carregando PDF...</strong>
-          <span>Preparando leitura adaptável</span>
+          <span>Restaurando sua última posição</span>
         </div>
       </div>
     );
@@ -441,10 +567,10 @@ export const PdfReader = forwardRef<PdfReaderHandle, PdfReaderProps>(function Pd
 
   return (
     <div ref={shellRef} className="lume-r4-shell" data-reader-theme={readerTheme} data-book-id={bookId}>
-      <header className="lume-r4-topbar">
+      <header className="lume-r4-topbar always-visible">
         <div className="lume-r4-brand">
           <span>LUME</span>
-          <small>{viewMode === "text" ? "Texto adaptável" : viewMode === "page" ? "Página original" : "Contínuo"}</small>
+          <small>{viewMode === "text" ? "Texto contínuo" : viewMode === "page" ? "Página original" : "PDF contínuo"}</small>
         </div>
 
         <div className="lume-r4-tabs" role="tablist" aria-label="Modo de leitura">
@@ -488,37 +614,24 @@ export const PdfReader = forwardRef<PdfReaderHandle, PdfReaderProps>(function Pd
         onTouchEnd={handleTouchEnd}
         onMouseUp={handleSelection}
       >
-        {error && pdf && (
-          <div className="lume-r4-warning">
-            {error}
-          </div>
-        )}
+        {error && pdf && <div className="lume-r4-warning">{error}</div>}
 
         {viewMode === "text" && (
-          <article
-            className="lume-r4-text-page"
-            style={{
-              fontSize,
-              lineHeight,
-              maxWidth: `${readerWidth}px`,
+          <TextContinuousView
+            pages={continuousTextPages}
+            currentPage={pageNumber}
+            totalPages={totalPages}
+            fontSize={fontSize}
+            fontFamily={fontFamily}
+            lineHeight={lineHeight}
+            readerWidth={readerWidth}
+            pageMargin={pageMargin}
+            onVisiblePage={updateVisibleTextPage}
+            onOpenOriginalPage={page => {
+              goToPage(page);
+              changeMode("page");
             }}
-          >
-            {pageHasText ? (
-              pageText.split(/\n{2,}/).map((paragraph, index) => (
-                <p key={`${pageNumber}-${index}`}>{paragraph}</p>
-              ))
-            ) : (
-              <div className="lume-r4-no-text">
-                <strong>Esta página parece ser imagem.</strong>
-                <span>
-                  Não encontrei texto selecionável nesta página. Use o modo Página para visualizar a página original.
-                </span>
-                <button type="button" onClick={() => changeMode("page")}>
-                  Ver página original
-                </button>
-              </div>
-            )}
-          </article>
+          />
         )}
 
         {viewMode === "page" && (
@@ -546,7 +659,7 @@ export const PdfReader = forwardRef<PdfReaderHandle, PdfReaderProps>(function Pd
         )}
       </main>
 
-      <footer className="lume-r4-footer">
+      <footer className="lume-r4-footer always-visible">
         <button type="button" onClick={previousPage} disabled={pageNumber <= 1} aria-label="Página anterior">
           ‹
         </button>
@@ -581,34 +694,10 @@ export const PdfReader = forwardRef<PdfReaderHandle, PdfReaderProps>(function Pd
             <div className="lume-r4-sheet-group">
               <label>Tema</label>
               <div className="lume-r4-segment">
-                <button
-                  type="button"
-                  className={readerTheme === "dark" ? "active" : ""}
-                  onClick={() => setReaderTheme("dark")}
-                >
-                  Noite
-                </button>
-                <button
-                  type="button"
-                  className={readerTheme === "sepia" ? "active" : ""}
-                  onClick={() => setReaderTheme("sepia")}
-                >
-                  Sépia
-                </button>
-                <button
-                  type="button"
-                  className={readerTheme === "light" ? "active" : ""}
-                  onClick={() => setReaderTheme("light")}
-                >
-                  Claro
-                </button>
-                <button
-                  type="button"
-                  className={readerTheme === "jade" ? "active" : ""}
-                  onClick={() => setReaderTheme("jade")}
-                >
-                  Jade
-                </button>
+                <button type="button" className={readerTheme === "dark" ? "active" : ""} onClick={() => setReaderTheme("dark")}>Noite</button>
+                <button type="button" className={readerTheme === "sepia" ? "active" : ""} onClick={() => setReaderTheme("sepia")}>Sépia</button>
+                <button type="button" className={readerTheme === "light" ? "active" : ""} onClick={() => setReaderTheme("light")}>Claro</button>
+                <button type="button" className={readerTheme === "jade" ? "active" : ""} onClick={() => setReaderTheme("jade")}>Jade</button>
               </div>
             </div>
 
@@ -617,39 +706,27 @@ export const PdfReader = forwardRef<PdfReaderHandle, PdfReaderProps>(function Pd
                 <div className="lume-r4-sheet-group">
                   <label>Tamanho da fonte</label>
                   <div className="lume-r4-row-controls">
-                    <button type="button" onClick={() => setFontSize(value => clamp(value - 2, 14, 38))}>
-                      A-
-                    </button>
+                    <button type="button" onClick={() => setFontSize(value => clamp(value - 2, 14, 38))}>A-</button>
                     <strong>{fontSize}px</strong>
-                    <button type="button" onClick={() => setFontSize(value => clamp(value + 2, 14, 38))}>
-                      A+
-                    </button>
+                    <button type="button" onClick={() => setFontSize(value => clamp(value + 2, 14, 38))}>A+</button>
                   </div>
                 </div>
 
                 <div className="lume-r4-sheet-group">
                   <label>Espaçamento</label>
                   <div className="lume-r4-row-controls">
-                    <button type="button" onClick={() => setLineHeight(value => clamp(value - 0.08, 1.3, 2.25))}>
-                      −
-                    </button>
+                    <button type="button" onClick={() => setLineHeight(value => clamp(value - 0.08, 1.3, 2.25))}>−</button>
                     <strong>{lineHeight.toFixed(2)}</strong>
-                    <button type="button" onClick={() => setLineHeight(value => clamp(value + 0.08, 1.3, 2.25))}>
-                      +
-                    </button>
+                    <button type="button" onClick={() => setLineHeight(value => clamp(value + 0.08, 1.3, 2.25))}>+</button>
                   </div>
                 </div>
 
                 <div className="lume-r4-sheet-group">
                   <label>Largura do texto</label>
                   <div className="lume-r4-row-controls">
-                    <button type="button" onClick={() => setReaderWidth(value => clamp(value - 40, 360, 960))}>
-                      −
-                    </button>
+                    <button type="button" onClick={() => setReaderWidth(value => clamp(value - 40, 360, 960))}>−</button>
                     <strong>{readerWidth}px</strong>
-                    <button type="button" onClick={() => setReaderWidth(value => clamp(value + 40, 360, 960))}>
-                      +
-                    </button>
+                    <button type="button" onClick={() => setReaderWidth(value => clamp(value + 40, 360, 960))}>+</button>
                   </div>
                 </div>
               </>
@@ -657,13 +734,9 @@ export const PdfReader = forwardRef<PdfReaderHandle, PdfReaderProps>(function Pd
               <div className="lume-r4-sheet-group">
                 <label>Zoom da página</label>
                 <div className="lume-r4-row-controls">
-                  <button type="button" onClick={() => setZoom(value => clamp(value - 0.15, 0.5, 3.2))}>
-                    −
-                  </button>
+                  <button type="button" onClick={() => setZoom(value => clamp(value - 0.15, 0.5, 3.2))}>−</button>
                   <strong>{Math.round(zoom * 100)}%</strong>
-                  <button type="button" onClick={() => setZoom(value => clamp(value + 0.15, 0.5, 3.2))}>
-                    +
-                  </button>
+                  <button type="button" onClick={() => setZoom(value => clamp(value + 0.15, 0.5, 3.2))}>+</button>
                 </div>
               </div>
             )}
@@ -673,12 +746,7 @@ export const PdfReader = forwardRef<PdfReaderHandle, PdfReaderProps>(function Pd
 
       {goToOpen && (
         <>
-          <button
-            type="button"
-            className="lume-r4-backdrop"
-            onClick={() => setGoToOpen(false)}
-            aria-label="Fechar ir para página"
-          />
+          <button type="button" className="lume-r4-backdrop" onClick={() => setGoToOpen(false)} aria-label="Fechar ir para página" />
 
           <section className="lume-r4-goto" aria-label="Ir para página">
             <h2>Ir para página</h2>
@@ -694,12 +762,8 @@ export const PdfReader = forwardRef<PdfReaderHandle, PdfReaderProps>(function Pd
             />
 
             <div>
-              <button type="button" onClick={() => setGoToOpen(false)}>
-                Cancelar
-              </button>
-              <button type="button" onClick={submitGoTo}>
-                Abrir
-              </button>
+              <button type="button" onClick={() => setGoToOpen(false)}>Cancelar</button>
+              <button type="button" onClick={submitGoTo}>Abrir</button>
             </div>
           </section>
         </>
@@ -707,6 +771,101 @@ export const PdfReader = forwardRef<PdfReaderHandle, PdfReaderProps>(function Pd
     </div>
   );
 });
+
+function TextContinuousView({
+  pages,
+  currentPage,
+  totalPages,
+  fontSize,
+  fontFamily,
+  lineHeight,
+  readerWidth,
+  pageMargin,
+  onVisiblePage,
+  onOpenOriginalPage,
+}: {
+  pages: ExtractedPageText[];
+  currentPage: number;
+  totalPages: number;
+  fontSize: number;
+  fontFamily: string;
+  lineHeight: number;
+  readerWidth: number;
+  pageMargin: number;
+  onVisiblePage: (page: number) => void;
+  onOpenOriginalPage: (page: number) => void;
+}) {
+  const listRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const root = listRef.current;
+    if (!root) return;
+
+    const observer = new IntersectionObserver(
+      entries => {
+        const visible = entries
+          .filter(entry => entry.isIntersecting)
+          .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+
+        const page = Number((visible?.target as HTMLElement | undefined)?.dataset.page ?? 0);
+        if (page > 0) onVisiblePage(page);
+      },
+      { root: root.parentElement, threshold: [0.45, 0.65] },
+    );
+
+    root.querySelectorAll("[data-page]").forEach(element => observer.observe(element));
+
+    return () => observer.disconnect();
+  }, [pages, onVisiblePage]);
+
+  if (pages.length === 0) {
+    return (
+      <article className="lume-r4-text-page" style={{ fontSize, fontFamily, lineHeight, maxWidth: `${readerWidth}px`, padding: `${pageMargin}px 22px` }}>
+        <div className="lume-r4-text-loading">
+          <div className="spinner" />
+          <strong>Extraindo texto...</strong>
+          <span>Preparando páginas próximas de {currentPage} / {totalPages}</span>
+        </div>
+      </article>
+    );
+  }
+
+  return (
+    <div ref={listRef} className="lume-r4-text-continuous">
+      {pages.map(item => (
+        <article
+          key={item.page}
+          className="lume-r4-text-page"
+          data-page={item.page}
+          style={{ fontSize, fontFamily, lineHeight, maxWidth: `${readerWidth}px`, padding: `${pageMargin}px 22px` }}
+        >
+          <div className="lume-r4-page-marker">Página {item.page}</div>
+
+          {item.loading ? (
+            <div className="lume-r4-text-loading">
+              <div className="spinner" />
+              <span>Extraindo texto desta página...</span>
+            </div>
+          ) : item.hasText ? (
+            item.text.split(/\n{2,}/).map((paragraph, index) => (
+              <p key={`${item.page}-${index}`}>{paragraph}</p>
+            ))
+          ) : (
+            <div className="lume-r4-no-text">
+              <strong>Página em imagem</strong>
+              <span>
+                Esta página não tem texto selecionável. Ela pode ser capa, foto, scan ou ilustração.
+              </span>
+              <button type="button" onClick={() => onOpenOriginalPage(item.page)}>
+                Ver página original
+              </button>
+            </div>
+          )}
+        </article>
+      ))}
+    </div>
+  );
+}
 
 function PdfContinuousPages({
   pdf,
@@ -721,22 +880,12 @@ function PdfContinuousPages({
   zoom: number;
   onVisiblePage: (page: number) => void;
 }) {
-  const [pages, setPages] = useState<number[]>([]);
+  const pages = useMemo(() => {
+    if (!pdf) return [];
+    return Array.from({ length: pdf.numPages }, (_, index) => index + 1);
+  }, [pdf]);
+
   const listRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    if (!pdf) return;
-
-    const start = clamp(currentPage - 2, 1, pdf.numPages);
-    const end = clamp(currentPage + 4, 1, pdf.numPages);
-    const next: number[] = [];
-
-    for (let page = start; page <= end; page += 1) {
-      next.push(page);
-    }
-
-    setPages(next);
-  }, [pdf, currentPage]);
 
   useEffect(() => {
     const root = listRef.current;
@@ -749,7 +898,6 @@ function PdfContinuousPages({
           .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
 
         const page = Number((visible?.target as HTMLElement | undefined)?.dataset.page ?? 0);
-
         if (page > 0) onVisiblePage(page);
       },
       { root: root.parentElement, threshold: [0.45, 0.65, 0.85] },
@@ -759,6 +907,13 @@ function PdfContinuousPages({
 
     return () => observer.disconnect();
   }, [pages, onVisiblePage]);
+
+  useEffect(() => {
+    window.setTimeout(() => {
+      const el = listRef.current?.querySelector(`[data-page="${currentPage}"]`);
+      el?.scrollIntoView({ block: "start", behavior: "auto" });
+    }, 80);
+  }, []);
 
   return (
     <div ref={listRef} className="lume-r4-continuous-list">
@@ -781,38 +936,62 @@ function PdfContinuousPage({
   zoom: number;
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
+  const [shouldRender, setShouldRender] = useState(false);
 
   useEffect(() => {
-    if (!pdf || !canvasRef.current) return;
+    const wrapper = wrapperRef.current;
+    if (!wrapper) return;
+
+    const observer = new IntersectionObserver(
+      entries => {
+        if (entries.some(entry => entry.isIntersecting)) {
+          setShouldRender(true);
+        }
+      },
+      { root: wrapper.parentElement?.parentElement ?? null, rootMargin: "900px" },
+    );
+
+    observer.observe(wrapper);
+
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!pdf || !canvasRef.current || !shouldRender) return;
 
     const activePdf = pdf;
     let cancelled = false;
 
     async function render() {
-      const page = await activePdf.getPage(pageNumber);
-      const canvas = canvasRef.current;
+      try {
+        const page = await activePdf.getPage(pageNumber);
+        const canvas = canvasRef.current;
 
-      if (!canvas || cancelled) return;
+        if (!canvas || cancelled) return;
 
-      const ctx = canvas.getContext("2d", { alpha: false });
-      if (!ctx) return;
+        const ctx = canvas.getContext("2d", { alpha: false });
+        if (!ctx) return;
 
-      const baseViewport = page.getViewport({ scale: 1 });
-      const availableWidth = Math.max(260, containerWidth - 24);
-      const fitScale = availableWidth / baseViewport.width;
-      const cssScale = clamp(fitScale * zoom, 0.45, 3.2);
-      const pixelRatio = Math.min(window.devicePixelRatio || 1, 2.5);
-      const viewport = page.getViewport({ scale: cssScale * pixelRatio });
+        const baseViewport = page.getViewport({ scale: 1 });
+        const availableWidth = Math.max(260, containerWidth - 24);
+        const fitScale = availableWidth / baseViewport.width;
+        const cssScale = clamp(fitScale * zoom, 0.45, 3.2);
+        const pixelRatio = Math.min(window.devicePixelRatio || 1, 2.5);
+        const viewport = page.getViewport({ scale: cssScale * pixelRatio });
 
-      canvas.width = Math.floor(viewport.width);
-      canvas.height = Math.floor(viewport.height);
-      canvas.style.width = `${Math.floor(baseViewport.width * cssScale)}px`;
-      canvas.style.height = `${Math.floor(baseViewport.height * cssScale)}px`;
+        canvas.width = Math.floor(viewport.width);
+        canvas.height = Math.floor(viewport.height);
+        canvas.style.width = `${Math.floor(baseViewport.width * cssScale)}px`;
+        canvas.style.height = `${Math.floor(baseViewport.height * cssScale)}px`;
 
-      ctx.fillStyle = "#ffffff";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      await page.render({ canvasContext: ctx, viewport, canvas }).promise;
+        await page.render({ canvasContext: ctx, viewport, canvas }).promise;
+      } catch {
+        // Página específica não deve quebrar o leitor inteiro.
+      }
     }
 
     void render();
@@ -820,10 +999,11 @@ function PdfContinuousPage({
     return () => {
       cancelled = true;
     };
-  }, [pdf, pageNumber, containerWidth, zoom]);
+  }, [pdf, pageNumber, containerWidth, zoom, shouldRender]);
 
   return (
-    <div className="lume-r4-continuous-page" data-page={pageNumber}>
+    <div ref={wrapperRef} className="lume-r4-continuous-page" data-page={pageNumber}>
+      <div className="lume-r4-continuous-label">Página {pageNumber}</div>
       <canvas ref={canvasRef} className="lume-r4-canvas" />
     </div>
   );
