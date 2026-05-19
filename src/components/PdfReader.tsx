@@ -3,6 +3,7 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -31,8 +32,8 @@ interface PdfReaderProps {
   onHighlight?: (text: string, pageNumber: number) => void;
 }
 
-type ViewMode = "read" | "page" | "scroll";
-type ReaderTheme = "dark" | "sepia" | "light";
+type ViewMode = "text" | "page" | "continuous";
+type ReaderTheme = "dark" | "sepia" | "light" | "jade";
 
 type TextItemLike = {
   str?: string;
@@ -55,12 +56,12 @@ function normalizePdfText(items: TextItemLike[]): string {
   const positioned: Array<{ x: number; y: number; text: string }> = [];
 
   for (const item of items) {
-    const text = item.str?.trim();
-    if (!text) continue;
+    const raw = item.str?.trim();
+    if (!raw) continue;
 
     const transform = item.transform ?? [];
     positioned.push({
-      text,
+      text: raw,
       x: Number(transform[4] ?? 0),
       y: Number(transform[5] ?? 0),
     });
@@ -115,6 +116,11 @@ function normalizePdfText(items: TextItemLike[]): string {
   return paragraphs.join("\n\n");
 }
 
+function getThemeName(theme: string | undefined): ReaderTheme {
+  if (theme === "light" || theme === "sepia" || theme === "jade") return theme;
+  return "dark";
+}
+
 export const PdfReader = forwardRef<PdfReaderHandle, PdfReaderProps>(function PdfReader(
   {
     fileUrl,
@@ -131,13 +137,16 @@ export const PdfReader = forwardRef<PdfReaderHandle, PdfReaderProps>(function Pd
   const [pdf, setPdf] = useState<pdfjs.PDFDocumentProxy | null>(null);
   const [pageNumber, setPageNumber] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
-  const [viewMode, setViewMode] = useState<ViewMode>(() => (isMobileDevice() ? "read" : "page"));
-  const [readerTheme, setReaderTheme] = useState<ReaderTheme>(
-    theme === "light" || theme === "sepia" ? theme : "dark",
+
+  const [viewMode, setViewMode] = useState<ViewMode>(() =>
+    isMobileDevice() ? "text" : "page",
   );
+  const [readerTheme, setReaderTheme] = useState<ReaderTheme>(() => getThemeName(theme));
   const [fontSize, setFontSize] = useState(() => (isMobileDevice() ? 20 : 22));
   const [lineHeight, setLineHeight] = useState(1.72);
+  const [readerWidth, setReaderWidth] = useState(760);
   const [zoom, setZoom] = useState(initialScale);
+
   const [pageText, setPageText] = useState("");
   const [pageHasText, setPageHasText] = useState(true);
   const [containerWidth, setContainerWidth] = useState(360);
@@ -145,6 +154,8 @@ export const PdfReader = forwardRef<PdfReaderHandle, PdfReaderProps>(function Pd
   const [rendering, setRendering] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [goToOpen, setGoToOpen] = useState(false);
+  const [goToValue, setGoToValue] = useState("1");
   const [orientationTick, setOrientationTick] = useState(0);
 
   const shellRef = useRef<HTMLDivElement | null>(null);
@@ -154,7 +165,10 @@ export const PdfReader = forwardRef<PdfReaderHandle, PdfReaderProps>(function Pd
   const touchStartX = useRef(0);
   const touchStartY = useRef(0);
 
-  const progress = totalPages > 0 ? Math.round((pageNumber / totalPages) * 100) : 0;
+  const progress = useMemo(() => {
+    if (!totalPages) return 0;
+    return Math.round((pageNumber / totalPages) * 100);
+  }, [pageNumber, totalPages]);
 
   useEffect(() => {
     let cancelled = false;
@@ -179,6 +193,7 @@ export const PdfReader = forwardRef<PdfReaderHandle, PdfReaderProps>(function Pd
         setPdf(loaded);
         setTotalPages(Math.max(1, loaded.numPages || 1));
         setPageNumber(1);
+        setGoToValue("1");
         setLoading(false);
       } catch (unknownError) {
         const message =
@@ -292,7 +307,7 @@ export const PdfReader = forwardRef<PdfReaderHandle, PdfReaderProps>(function Pd
         const baseViewport = page.getViewport({ scale: 1 });
         const availableWidth = Math.max(260, containerWidth - 22);
         const fitScale = availableWidth / baseViewport.width;
-        const cssScale = clamp(fitScale * zoom, 0.45, 3);
+        const cssScale = clamp(fitScale * zoom, 0.45, 3.2);
         const pixelRatio = Math.min(window.devicePixelRatio || 1, 2.5);
         const viewport = page.getViewport({ scale: cssScale * pixelRatio });
 
@@ -334,6 +349,7 @@ export const PdfReader = forwardRef<PdfReaderHandle, PdfReaderProps>(function Pd
     (next: number) => {
       const target = clamp(Math.round(next), 1, totalPages);
       setPageNumber(target);
+      setGoToValue(String(target));
       contentRef.current?.scrollTo({ top: 0, behavior: "auto" });
     },
     [totalPages],
@@ -353,8 +369,8 @@ export const PdfReader = forwardRef<PdfReaderHandle, PdfReaderProps>(function Pd
       previousPage,
       nextPage,
       goToPage,
-      zoomIn: () => setZoom(value => clamp(value + 0.15, 0.5, 3)),
-      zoomOut: () => setZoom(value => clamp(value - 0.15, 0.5, 3)),
+      zoomIn: () => setZoom(value => clamp(value + 0.15, 0.5, 3.2)),
+      zoomOut: () => setZoom(value => clamp(value - 0.15, 0.5, 3.2)),
       zoomFit: () => setZoom(1),
     }),
     [previousPage, nextPage, goToPage],
@@ -392,13 +408,21 @@ export const PdfReader = forwardRef<PdfReaderHandle, PdfReaderProps>(function Pd
     setSettingsOpen(false);
   };
 
+  const submitGoTo = () => {
+    const target = Number(goToValue);
+    if (!Number.isFinite(target)) return;
+
+    goToPage(target);
+    setGoToOpen(false);
+  };
+
   if (loading) {
     return (
-      <div className="lume-v31-shell" data-reader-theme={readerTheme} data-book-id={bookId}>
-        <div className="lume-v31-loading">
+      <div className="lume-r4-shell" data-reader-theme={readerTheme} data-book-id={bookId}>
+        <div className="lume-r4-loading">
           <div className="spinner" />
           <strong>Carregando PDF...</strong>
-          <span>Preparando leitura</span>
+          <span>Preparando leitura adaptável</span>
         </div>
       </div>
     );
@@ -406,8 +430,8 @@ export const PdfReader = forwardRef<PdfReaderHandle, PdfReaderProps>(function Pd
 
   if (error && !pdf) {
     return (
-      <div className="lume-v31-shell" data-reader-theme={readerTheme} data-book-id={bookId}>
-        <div className="lume-v31-error">
+      <div className="lume-r4-shell" data-reader-theme={readerTheme} data-book-id={bookId}>
+        <div className="lume-r4-error">
           <strong>Não foi possível abrir este PDF</strong>
           <span>{error}</span>
         </div>
@@ -416,13 +440,18 @@ export const PdfReader = forwardRef<PdfReaderHandle, PdfReaderProps>(function Pd
   }
 
   return (
-    <div ref={shellRef} className="lume-v31-shell" data-reader-theme={readerTheme} data-book-id={bookId}>
-      <header className="lume-v31-topbar">
-        <div className="lume-v31-mode-tabs" role="tablist" aria-label="Modo de leitura">
+    <div ref={shellRef} className="lume-r4-shell" data-reader-theme={readerTheme} data-book-id={bookId}>
+      <header className="lume-r4-topbar">
+        <div className="lume-r4-brand">
+          <span>LUME</span>
+          <small>{viewMode === "text" ? "Texto adaptável" : viewMode === "page" ? "Página original" : "Contínuo"}</small>
+        </div>
+
+        <div className="lume-r4-tabs" role="tablist" aria-label="Modo de leitura">
           <button
             type="button"
-            className={viewMode === "read" ? "active" : ""}
-            onClick={() => changeMode("read")}
+            className={viewMode === "text" ? "active" : ""}
+            onClick={() => changeMode("text")}
           >
             Texto
           </button>
@@ -435,8 +464,8 @@ export const PdfReader = forwardRef<PdfReaderHandle, PdfReaderProps>(function Pd
           </button>
           <button
             type="button"
-            className={viewMode === "scroll" ? "active" : ""}
-            onClick={() => changeMode("scroll")}
+            className={viewMode === "continuous" ? "active" : ""}
+            onClick={() => changeMode("continuous")}
           >
             Contínuo
           </button>
@@ -444,7 +473,7 @@ export const PdfReader = forwardRef<PdfReaderHandle, PdfReaderProps>(function Pd
 
         <button
           type="button"
-          className="lume-v31-settings-btn"
+          className="lume-r4-icon-button"
           onClick={() => setSettingsOpen(true)}
           aria-label="Configurações de leitura"
         >
@@ -454,21 +483,36 @@ export const PdfReader = forwardRef<PdfReaderHandle, PdfReaderProps>(function Pd
 
       <main
         ref={contentRef}
-        className="lume-v31-content"
+        className="lume-r4-content"
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
         onMouseUp={handleSelection}
       >
-        {viewMode === "read" && (
-          <article className="lume-v31-read-page" style={{ fontSize, lineHeight }}>
+        {error && pdf && (
+          <div className="lume-r4-warning">
+            {error}
+          </div>
+        )}
+
+        {viewMode === "text" && (
+          <article
+            className="lume-r4-text-page"
+            style={{
+              fontSize,
+              lineHeight,
+              maxWidth: `${readerWidth}px`,
+            }}
+          >
             {pageHasText ? (
               pageText.split(/\n{2,}/).map((paragraph, index) => (
                 <p key={`${pageNumber}-${index}`}>{paragraph}</p>
               ))
             ) : (
-              <div className="lume-v31-no-text">
+              <div className="lume-r4-no-text">
                 <strong>Esta página parece ser imagem.</strong>
-                <span>Não encontrei texto selecionável. Use o modo Página para visualizar.</span>
+                <span>
+                  Não encontrei texto selecionável nesta página. Use o modo Página para visualizar a página original.
+                </span>
                 <button type="button" onClick={() => changeMode("page")}>
                   Ver página original
                 </button>
@@ -478,69 +522,71 @@ export const PdfReader = forwardRef<PdfReaderHandle, PdfReaderProps>(function Pd
         )}
 
         {viewMode === "page" && (
-          <div className="lume-v31-page-mode">
+          <div className="lume-r4-page-mode">
             {rendering && (
-              <div className="lume-v31-rendering">
+              <div className="lume-r4-rendering">
                 <div className="spinner" />
               </div>
             )}
-            <canvas ref={canvasRef} className="lume-v31-canvas" />
+            <canvas ref={canvasRef} className="lume-r4-canvas" />
           </div>
         )}
 
-        {viewMode === "scroll" && (
+        {viewMode === "continuous" && (
           <PdfContinuousPages
             pdf={pdf}
             currentPage={pageNumber}
             containerWidth={containerWidth}
             zoom={zoom}
-            onVisiblePage={page => setPageNumber(page)}
+            onVisiblePage={page => {
+              setPageNumber(page);
+              setGoToValue(String(page));
+            }}
           />
         )}
       </main>
 
-      <footer className="lume-v31-footer">
+      <footer className="lume-r4-footer">
         <button type="button" onClick={previousPage} disabled={pageNumber <= 1} aria-label="Página anterior">
           ‹
         </button>
 
-        <div className="lume-v31-progress">
-          <div>
-            <span>{pageNumber} / {totalPages}</span>
-            <span>{progress}%</span>
-          </div>
-          <div className="lume-v31-track">
-            <div style={{ width: `${progress}%` }} />
-          </div>
-        </div>
+        <button type="button" className="lume-r4-page-pill" onClick={() => setGoToOpen(true)}>
+          <span>{pageNumber} / {totalPages}</span>
+          <small>{progress}%</small>
+        </button>
 
         <button type="button" onClick={nextPage} disabled={pageNumber >= totalPages} aria-label="Próxima página">
           ›
         </button>
+
+        <div className="lume-r4-track" aria-hidden="true">
+          <div style={{ width: `${progress}%` }} />
+        </div>
       </footer>
 
       {settingsOpen && (
         <>
           <button
             type="button"
-            className="lume-v31-backdrop"
+            className="lume-r4-backdrop"
             onClick={() => setSettingsOpen(false)}
             aria-label="Fechar configurações"
           />
 
-          <section className="lume-v31-sheet" aria-label="Configurações de leitura">
-            <div className="lume-v31-sheet-handle" />
-            <h2>Configurações</h2>
+          <section className="lume-r4-sheet" aria-label="Configurações de leitura">
+            <div className="lume-r4-sheet-handle" />
+            <h2>Configurações de leitura</h2>
 
-            <div className="lume-v31-sheet-group">
+            <div className="lume-r4-sheet-group">
               <label>Tema</label>
-              <div className="lume-v31-segment">
+              <div className="lume-r4-segment">
                 <button
                   type="button"
                   className={readerTheme === "dark" ? "active" : ""}
                   onClick={() => setReaderTheme("dark")}
                 >
-                  Escuro
+                  Noite
                 </button>
                 <button
                   type="button"
@@ -556,51 +602,105 @@ export const PdfReader = forwardRef<PdfReaderHandle, PdfReaderProps>(function Pd
                 >
                   Claro
                 </button>
+                <button
+                  type="button"
+                  className={readerTheme === "jade" ? "active" : ""}
+                  onClick={() => setReaderTheme("jade")}
+                >
+                  Jade
+                </button>
               </div>
             </div>
 
-            {viewMode === "read" ? (
+            {viewMode === "text" ? (
               <>
-                <div className="lume-v31-sheet-group">
+                <div className="lume-r4-sheet-group">
                   <label>Tamanho da fonte</label>
-                  <div className="lume-v31-row-controls">
-                    <button type="button" onClick={() => setFontSize(value => clamp(value - 2, 14, 36))}>
+                  <div className="lume-r4-row-controls">
+                    <button type="button" onClick={() => setFontSize(value => clamp(value - 2, 14, 38))}>
                       A-
                     </button>
                     <strong>{fontSize}px</strong>
-                    <button type="button" onClick={() => setFontSize(value => clamp(value + 2, 14, 36))}>
+                    <button type="button" onClick={() => setFontSize(value => clamp(value + 2, 14, 38))}>
                       A+
                     </button>
                   </div>
                 </div>
 
-                <div className="lume-v31-sheet-group">
+                <div className="lume-r4-sheet-group">
                   <label>Espaçamento</label>
-                  <div className="lume-v31-row-controls">
-                    <button type="button" onClick={() => setLineHeight(value => clamp(value - 0.08, 1.35, 2.2))}>
+                  <div className="lume-r4-row-controls">
+                    <button type="button" onClick={() => setLineHeight(value => clamp(value - 0.08, 1.3, 2.25))}>
                       −
                     </button>
                     <strong>{lineHeight.toFixed(2)}</strong>
-                    <button type="button" onClick={() => setLineHeight(value => clamp(value + 0.08, 1.35, 2.2))}>
+                    <button type="button" onClick={() => setLineHeight(value => clamp(value + 0.08, 1.3, 2.25))}>
+                      +
+                    </button>
+                  </div>
+                </div>
+
+                <div className="lume-r4-sheet-group">
+                  <label>Largura do texto</label>
+                  <div className="lume-r4-row-controls">
+                    <button type="button" onClick={() => setReaderWidth(value => clamp(value - 40, 360, 960))}>
+                      −
+                    </button>
+                    <strong>{readerWidth}px</strong>
+                    <button type="button" onClick={() => setReaderWidth(value => clamp(value + 40, 360, 960))}>
                       +
                     </button>
                   </div>
                 </div>
               </>
             ) : (
-              <div className="lume-v31-sheet-group">
-                <label>Zoom</label>
-                <div className="lume-v31-row-controls">
-                  <button type="button" onClick={() => setZoom(value => clamp(value - 0.15, 0.5, 3))}>
+              <div className="lume-r4-sheet-group">
+                <label>Zoom da página</label>
+                <div className="lume-r4-row-controls">
+                  <button type="button" onClick={() => setZoom(value => clamp(value - 0.15, 0.5, 3.2))}>
                     −
                   </button>
                   <strong>{Math.round(zoom * 100)}%</strong>
-                  <button type="button" onClick={() => setZoom(value => clamp(value + 0.15, 0.5, 3))}>
+                  <button type="button" onClick={() => setZoom(value => clamp(value + 0.15, 0.5, 3.2))}>
                     +
                   </button>
                 </div>
               </div>
             )}
+          </section>
+        </>
+      )}
+
+      {goToOpen && (
+        <>
+          <button
+            type="button"
+            className="lume-r4-backdrop"
+            onClick={() => setGoToOpen(false)}
+            aria-label="Fechar ir para página"
+          />
+
+          <section className="lume-r4-goto" aria-label="Ir para página">
+            <h2>Ir para página</h2>
+            <p>Digite um número entre 1 e {totalPages}.</p>
+
+            <input
+              type="number"
+              min={1}
+              max={totalPages}
+              value={goToValue}
+              onChange={event => setGoToValue(event.target.value)}
+              autoFocus
+            />
+
+            <div>
+              <button type="button" onClick={() => setGoToOpen(false)}>
+                Cancelar
+              </button>
+              <button type="button" onClick={submitGoTo}>
+                Abrir
+              </button>
+            </div>
           </section>
         </>
       )}
@@ -649,6 +749,7 @@ function PdfContinuousPages({
           .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
 
         const page = Number((visible?.target as HTMLElement | undefined)?.dataset.page ?? 0);
+
         if (page > 0) onVisiblePage(page);
       },
       { root: root.parentElement, threshold: [0.45, 0.65, 0.85] },
@@ -660,7 +761,7 @@ function PdfContinuousPages({
   }, [pages, onVisiblePage]);
 
   return (
-    <div ref={listRef} className="lume-v31-scroll-list">
+    <div ref={listRef} className="lume-r4-continuous-list">
       {pages.map(page => (
         <PdfContinuousPage key={page} pdf={pdf} pageNumber={page} containerWidth={containerWidth} zoom={zoom} />
       ))}
@@ -699,7 +800,7 @@ function PdfContinuousPage({
       const baseViewport = page.getViewport({ scale: 1 });
       const availableWidth = Math.max(260, containerWidth - 24);
       const fitScale = availableWidth / baseViewport.width;
-      const cssScale = clamp(fitScale * zoom, 0.45, 3);
+      const cssScale = clamp(fitScale * zoom, 0.45, 3.2);
       const pixelRatio = Math.min(window.devicePixelRatio || 1, 2.5);
       const viewport = page.getViewport({ scale: cssScale * pixelRatio });
 
@@ -722,8 +823,8 @@ function PdfContinuousPage({
   }, [pdf, pageNumber, containerWidth, zoom]);
 
   return (
-    <div className="lume-v31-scroll-page" data-page={pageNumber}>
-      <canvas ref={canvasRef} className="lume-v31-canvas" />
+    <div className="lume-r4-continuous-page" data-page={pageNumber}>
+      <canvas ref={canvasRef} className="lume-r4-canvas" />
     </div>
   );
 }
