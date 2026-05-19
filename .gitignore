@@ -4,3 +4,17 @@ dist/
 *.zip
 .env
 .env.local
+
+# Android signing keys
+*.jks
+*.keystore
+keystore.properties
+android/app/*.jks
+android/app/*.keystore
+
+# Android release signing local files
+lume-upload-keystore.base64.txt
+android/app/lume-upload-keystore.jks
+*.jks
+*.keystore
+keystore.properties
