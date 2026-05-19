@@ -3319,3 +3319,299 @@ input[type="range"]::-moz-range-thumb {
     }
   }
 }
+
+/* =========================================================
+   Lume Modern UI — Fase 1
+   Premium dark / jade / gold visual layer
+   Safe CSS-only upgrade
+   ========================================================= */
+
+:root {
+  --lume-bg-deep: #070908;
+  --lume-bg: #0b0f0d;
+  --lume-panel: rgba(15, 22, 18, 0.86);
+  --lume-panel-solid: #101814;
+  --lume-card: rgba(20, 31, 25, 0.82);
+  --lume-card-hover: rgba(29, 45, 36, 0.9);
+  --lume-border: rgba(201, 169, 110, 0.14);
+  --lume-border-strong: rgba(201, 169, 110, 0.32);
+  --lume-gold: #c9a96e;
+  --lume-gold-bright: #efd28f;
+  --lume-jade: #1e6b50;
+  --lume-jade-bright: #62d6a2;
+  --lume-red: #8f2e2e;
+  --lume-text: #f3efe4;
+  --lume-text-soft: #b8ad9b;
+  --lume-text-muted: #786f62;
+  --lume-shadow: 0 22px 70px rgba(0, 0, 0, 0.34);
+  --lume-radius-xl: 26px;
+  --lume-radius-lg: 20px;
+  --lume-radius-md: 15px;
+}
+
+body {
+  background:
+    radial-gradient(circle at 14% 10%, rgba(201, 169, 110, 0.12), transparent 28%),
+    radial-gradient(circle at 88% 18%, rgba(30, 107, 80, 0.16), transparent 32%),
+    radial-gradient(circle at 50% 100%, rgba(143, 46, 46, 0.08), transparent 36%),
+    var(--lume-bg-deep) !important;
+}
+
+.app-shell {
+  min-height: 100dvh;
+  width: 100%;
+  display: flex;
+  overflow: hidden;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.025), transparent 36%),
+    transparent;
+  color: var(--lume-text);
+}
+
+.app-content {
+  flex: 1;
+  min-width: 0;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+}
+
+.app-content::before {
+  content: "";
+  position: absolute;
+  inset: 16px 16px auto auto;
+  width: min(42vw, 520px);
+  height: min(42vw, 520px);
+  border-radius: 999px;
+  background:
+    radial-gradient(circle, rgba(201, 169, 110, 0.11), transparent 62%),
+    radial-gradient(circle at 70% 65%, rgba(30, 107, 80, 0.16), transparent 58%);
+  pointer-events: none;
+  filter: blur(2px);
+  opacity: 0.8;
+}
+
+.app-main {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 22px;
+  position: relative;
+  z-index: 1;
+}
+
+.app-main::-webkit-scrollbar {
+  width: 9px;
+}
+
+.app-main::-webkit-scrollbar-thumb {
+  background: rgba(201, 169, 110, 0.22);
+  border-radius: 999px;
+}
+
+.app-main::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Sidebar premium */
+
+.app-shell aside,
+.sidebar,
+[class*="sidebar"],
+nav[aria-label*="Sidebar"],
+nav[aria-label*="sidebar"] {
+  backdrop-filter: blur(22px);
+}
+
+.sidebar,
+.app-sidebar {
+  background:
+    linear-gradient(180deg, rgba(20, 31, 25, 0.92), rgba(10, 15, 12, 0.96)) !important;
+  border-right: 1px solid var(--lume-border) !important;
+  box-shadow: 16px 0 60px rgba(0, 0, 0, 0.24);
+}
+
+/* Topbar premium */
+
+.topbar,
+.app-topbar,
+header[class*="top"],
+.app-content > header {
+  background: rgba(12, 18, 15, 0.72) !important;
+  border-bottom: 1px solid var(--lume-border) !important;
+  backdrop-filter: blur(20px);
+  box-shadow: 0 14px 42px rgba(0, 0, 0, 0.16);
+}
+
+/* Cards gerais */
+
+.card,
+.stat-card,
+.book-card,
+.dashboard-card,
+.section-card,
+.glass-card,
+[class*="Card"] {
+  border-color: var(--lume-border) !important;
+}
+
+.book-card,
+.stat-card,
+.dashboard-card,
+.section-card,
+.glass-card {
+  background:
+    linear-gradient(145deg, rgba(25, 38, 31, 0.9), rgba(12, 18, 15, 0.92)) !important;
+  border: 1px solid var(--lume-border) !important;
+  box-shadow: var(--lume-shadow);
+}
+
+.book-card:hover,
+.stat-card:hover,
+.dashboard-card:hover,
+.section-card:hover,
+.glass-card:hover {
+  border-color: var(--lume-border-strong) !important;
+  transform: translateY(-2px);
+  transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+}
+
+/* Botões gerais */
+
+button {
+  transition:
+    transform 0.16s ease,
+    border-color 0.16s ease,
+    background 0.16s ease,
+    color 0.16s ease,
+    box-shadow 0.16s ease;
+}
+
+button:active {
+  transform: scale(0.98);
+}
+
+.btn,
+.primary-button,
+.import-button,
+button[class*="primary"],
+button[class*="import"] {
+  border-radius: 15px !important;
+}
+
+button:not(:disabled):hover {
+  border-color: var(--lume-border-strong);
+}
+
+/* Inputs */
+
+input,
+textarea,
+select {
+  background: rgba(8, 12, 10, 0.68) !important;
+  border-color: rgba(201, 169, 110, 0.18) !important;
+  color: var(--lume-text) !important;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: rgba(184, 173, 155, 0.52) !important;
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+  outline: none !important;
+  border-color: rgba(201, 169, 110, 0.5) !important;
+  box-shadow: 0 0 0 3px rgba(201, 169, 110, 0.1) !important;
+}
+
+/* Títulos e textos */
+
+h1,
+h2,
+h3 {
+  color: var(--lume-text);
+}
+
+.section-title,
+.page-title,
+.dashboard-title {
+  letter-spacing: -0.03em;
+}
+
+small,
+.muted,
+.text-muted {
+  color: var(--lume-text-muted) !important;
+}
+
+/* Dashboard / biblioteca */
+
+.book-grid,
+.dashboard-grid,
+.stats-grid {
+  gap: 18px !important;
+}
+
+.book-cover,
+.cover,
+[class*="cover"] {
+  box-shadow:
+    0 18px 38px rgba(0, 0, 0, 0.35),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+
+.progress,
+.progress-bar,
+[class*="progress"] {
+  border-radius: 999px;
+}
+
+/* Modais */
+
+.modal,
+.dialog,
+[role="dialog"] {
+  border-color: var(--lume-border-strong) !important;
+  box-shadow: 0 34px 120px rgba(0, 0, 0, 0.55) !important;
+}
+
+/* Toast */
+
+.toast,
+[class*="toast"] {
+  border-color: rgba(201, 169, 110, 0.24) !important;
+  backdrop-filter: blur(16px);
+}
+
+/* Mobile polish */
+
+@media (max-width: 767px) {
+  .app-main {
+    padding: 14px;
+  }
+
+  .app-content::before {
+    width: 82vw;
+    height: 82vw;
+    inset: 60px -30vw auto auto;
+    opacity: 0.55;
+  }
+
+  .book-grid,
+  .dashboard-grid,
+  .stats-grid {
+    gap: 12px !important;
+  }
+
+  .book-card,
+  .stat-card,
+  .dashboard-card,
+  .section-card,
+  .glass-card {
+    border-radius: 18px !important;
+  }
+}
